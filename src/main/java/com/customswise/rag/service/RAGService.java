@@ -58,7 +58,7 @@ public class RAGService {
         float[] queryVector = miniMaxService.embed(request.getQuestion());
 
         // 2. 混合检索（向量 + 状态权重）
-        List<Map<String, Object>> searchResults = milvusService.searchVectors(queryVector, topK * 2, null);
+        List<Map<String, Object>> searchResults = milvusService.searchVectors(queryVector, topK * 2);
 
         // 3. 根据状态重新排序 - 现行政策优先
         searchResults.sort((a, b) -> {

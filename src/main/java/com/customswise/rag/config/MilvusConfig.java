@@ -1,6 +1,7 @@
 package com.customswise.rag.config;
 
 import io.milvus.client.MilvusClient;
+import io.milvus.client.MilvusServiceClient;
 import io.milvus.param.ConnectParam;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
@@ -21,6 +22,6 @@ public class MilvusConfig {
                 .withHost(host)
                 .withPort(port)
                 .build();
-        return new MilvusClient(connectParam);
+        return new MilvusServiceClient(connectParam);
     }
 }
