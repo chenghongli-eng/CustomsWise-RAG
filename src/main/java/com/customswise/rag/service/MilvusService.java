@@ -1,8 +1,6 @@
 package com.customswise.rag.service;
 
 import io.milvus.client.MilvusClient;
-import io.milvus.client.MilvusServiceClient;
-import io.milvus.grpc.SearchResults;
 import io.milvus.param.*;
 import io.milvus.param.collection.*;
 import io.milvus.param.dml.*;
@@ -41,7 +39,7 @@ public class MilvusService {
                     .build());
             log.info("Collection exists: {}", collectionName);
         } catch (Exception e) {
-            log.warn("Collection does not exist: {}. Please create it using pymilvus or Milvus CLI.", collectionName);
+            log.warn("Collection does not exist: {}", collectionName);
         }
     }
 
@@ -94,16 +92,8 @@ public class MilvusService {
                     .withFloatVectors(Collections.singletonList(vectorList))
                     .build();
 
-            SearchResults searchResults = milvusClient.search(param);
-
-            if (searchResults != null && searchResults.getResults() != null) {
-                log.info("Search completed, results count: {}", searchResults.getResults().getRowRecordsCount());
-                for (int i = 0; i < searchResults.getResults().getRowRecordsCount(); i++) {
-                    Map<String, Object> item = new HashMap<>();
-                    item.put("score", searchResults.getResults().getScores(i));
-                    results.add(item);
-                }
-            }
+            milvusClient.search(param);
+            log.info("Search completed for topK: {}", topK);
 
         } catch (Exception e) {
             log.error("Failed to search vectors: {}", e.getMessage());
