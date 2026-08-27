@@ -2,9 +2,10 @@ package com.customswise.rag.service;
 
 import io.milvus.client.MilvusClient;
 import io.milvus.client.MilvusServiceClient;
+import io.milvus.grpc.DataType;
 import io.milvus.param.*;
-import io.milvus.param.dml.*;
 import io.milvus.param.collection.*;
+import io.milvus.param.dml.*;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
@@ -21,6 +22,8 @@ public class MilvusService {
     @Value("${milvus.collection-name}")
     private String collectionName;
 
+    private static final int VECTOR_DIM = 1536;
+
     public MilvusService(MilvusClient milvusClient) {
         this.milvusClient = milvusClient;
     }
@@ -30,7 +33,7 @@ public class MilvusService {
         try {
             createCollectionIfNotExists();
         } catch (Exception e) {
-            log.warn("Failed to initialize Milvus collection: {}. Will retry on first insert.", e.getMessage());
+            log.warn("Failed to initialize Milvus collection: {}", e.getMessage());
         }
     }
 
@@ -46,11 +49,33 @@ public class MilvusService {
         } catch (Exception e) {
             log.info("Creating Milvus collection: {}", collectionName);
             try {
-                // 使用简化方式创建
-                milvusClient.createCollection(CreateCollectionParam.newBuilder()
+                // 构建schema
+                FieldType vectorField = FieldType.newBuilder()
+                        .withName("vector")
+                        .withDataType(DataType.FloatVector)
+                        .withDimension(VECTOR_DIM)
+                        .build();
+
+                FieldType textField = FieldType.newBuilder()
+                        .withName("text")
+                        .withDataType(DataType.VarChar)
+                        .withMaxLength(65535)
+                        .build();
+
+                FieldType docIdField = FieldType.newBuilder()
+                        .withName("document_id")
+                        .withDataType(DataType.VarChar)
+                        .withMaxLength(100)
+                        .build();
+
+                CreateCollectionParam param = CreateCollectionParam.newBuilder()
                         .withCollectionName(collectionName)
-                        .build());
-                log.info("Milvus collection created: {}", collectionName);
+                        .withDescription("CustomsWise RAG document vectors")
+                        .withFieldTypes(Arrays.asList(vectorField, textField, docIdField))
+                        .build();
+
+                milvusClient.createCollection(param);
+                log.info("Milvus collection created successfully: {}", collectionName);
             } catch (Exception ex) {
                 log.error("Failed to create collection: {}", ex.getMessage());
             }
@@ -69,9 +94,11 @@ public class MilvusService {
                 vectorList.add(v);
             }
 
-            // 简化插入
-            List<InsertParam.Field> fields = new ArrayList<>();
-            fields.add(new InsertParam.Field("vector", Collections.singletonList(vectorList)));
+            List<InsertParam.Field> fields = Arrays.asList(
+                    new InsertParam.Field("vector", Collections.singletonList(vectorList)),
+                    new InsertParam.Field("text", Collections.singletonList(text)),
+                    new InsertParam.Field("document_id", Collections.singletonList(metadata.getOrDefault("document_id", "")))
+            );
 
             InsertParam param = InsertParam.newBuilder()
                     .withCollectionName(collectionName)
