@@ -54,13 +54,24 @@ public class RAGService {
      * 问答
      */
     public QaResponse ask(QaRequest request) {
-        // 1. 查询向量化和检索
+        // 1. 生成问题向量
         float[] queryVector = miniMaxService.embed(request.getQuestion());
+        log.info("问题: {}", request.getQuestion());
+        log.info("问题向量维度: {}", queryVector.length);
 
-        // 2. 混合检索（向量 + 状态权重）
+        // 2. 搜索
         List<Map<String, Object>> searchResults = milvusService.searchVectors(queryVector, topK * 2);
+        log.info("检索到 {} 条结果", searchResults.size());
 
-        // 3. 根据状态重新排序 - 现行政策优先
+        // 3. 打印检索结果
+        for (int i = 0; i < searchResults.size(); i++) {
+            Map<String, Object> result = searchResults.get(i);
+            String text = (String) result.getOrDefault("text", "");
+            String docId = (String) result.getOrDefault("document_id", "");
+            log.info("结果{} - docId: {}, text: {}", i, docId, text.length() > 50 ? text.substring(0, 50) + "..." : text);
+        }
+
+        // 4. 根据状态重新排序 - 现行政策优先
         searchResults.sort((a, b) -> {
             float scoreA = (float) a.get("score");
             float scoreB = (float) b.get("score");
@@ -77,10 +88,10 @@ public class RAGService {
             return Float.compare(scoreB, scoreA);
         });
 
-        // 4. 取topK
+        // 5. 取topK
         List<Map<String, Object>> topResults = searchResults.subList(0, Math.min(rerankTopK, searchResults.size()));
 
-        // 5. 构建上下文
+        // 6. 构建上下文
         StringBuilder context = new StringBuilder();
         List<QaResponse.Reference> references = new ArrayList<>();
 
@@ -113,16 +124,16 @@ public class RAGService {
             }
         }
 
-        // 6. 组装Prompt
+        // 7. 组装Prompt
         String prompt = buildPrompt(request.getQuestion(), request.getUserConditions(), context.toString());
 
-        // 7. 调用LLM
+        // 8. 调用LLM
         String answer = miniMaxService.chat(prompt);
 
-        // 8. 保存问答历史
+        // 9. 保存问答历史
         saveHistory(request, answer, references);
 
-        // 9. 返回结果
+        // 10. 返回结果
         QaResponse response = new QaResponse();
         response.setAnswer(answer);
         response.setReferences(references);
