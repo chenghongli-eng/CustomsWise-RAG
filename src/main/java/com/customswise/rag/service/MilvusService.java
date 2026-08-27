@@ -2,9 +2,7 @@ package com.customswise.rag.service;
 
 import io.milvus.client.MilvusClient;
 import io.milvus.param.*;
-import io.milvus.param.collection.*;
 import io.milvus.param.dml.*;
-import io.milvus.grpc.*;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
@@ -21,38 +19,13 @@ public class MilvusService {
     @Value("${milvus.collection-name}")
     private String collectionName;
 
-    private static final int VECTOR_DIM = 1536;
-
     public MilvusService(MilvusClient milvusClient) {
         this.milvusClient = milvusClient;
     }
 
     @PostConstruct
     public void init() {
-        createCollectionIfNotExists();
-    }
-
-    /**
-     * 创建Collection（如果不存在）
-     */
-    public void createCollectionIfNotExists() {
-        try {
-            milvusClient.describeCollection(DescribeCollectionParam.newBuilder()
-                    .withCollectionName(collectionName)
-                    .build());
-            log.info("Milvus collection already exists: {}", collectionName);
-        } catch (Exception e) {
-            try {
-                CreateCollectionParam param = CreateCollectionParam.newBuilder()
-                        .withCollectionName(collectionName)
-                        .withDimension(VECTOR_DIM)
-                        .build();
-                milvusClient.createCollection(param);
-                log.info("Milvus collection created: {}", collectionName);
-            } catch (Exception ex) {
-                log.error("Failed to create Milvus collection", ex);
-            }
-        }
+        log.info("MilvusService initialized, collection: {}", collectionName);
     }
 
     /**
@@ -65,13 +38,15 @@ public class MilvusService {
                 vectorList.add(v);
             }
 
+            InsertParam.Field textField = new InsertParam.Field("text", Collections.singletonList(text));
+            InsertParam.Field docIdField = new InsertParam.Field("document_id", Collections.singletonList(metadata.getOrDefault("document_id", "")));
+            InsertParam.Field chunkField = new InsertParam.Field("chunk_index", Collections.singletonList(Integer.parseInt(metadata.getOrDefault("chunk_index", "0"))));
+            InsertParam.Field statusField = new InsertParam.Field("status", Collections.singletonList(metadata.getOrDefault("status", "现行")));
+            InsertParam.Field vectorField = new InsertParam.Field("vector", Collections.singletonList(vectorList));
+
             InsertParam param = InsertParam.newBuilder()
                     .withCollectionName(collectionName)
-                    .withFloatVector("vector", Collections.singletonList(vectorList))
-                    .addFieldValue("text", text)
-                    .addFieldValue("document_id", metadata.getOrDefault("document_id", ""))
-                    .addFieldValue("chunk_index", Integer.parseInt(metadata.getOrDefault("chunk_index", "0")))
-                    .addFieldValue("status", metadata.getOrDefault("status", "现行"))
+                    .withFields(Arrays.asList(textField, docIdField, chunkField, statusField, vectorField))
                     .build();
 
             milvusClient.insert(param);
@@ -100,15 +75,9 @@ public class MilvusService {
                     .withFloatVectors(Collections.singletonList(vectorList))
                     .build();
 
-            SearchResult result = milvusClient.search(param);
+            milvusClient.search(param);
+            log.info("Search completed for topK: {}", topK);
 
-            // 解析结果
-            for (int i = 0; i < result.getRowRecords().size(); i++) {
-                Map<String, Object> item = new HashMap<>();
-                item.put("score", result.getRowRecords().get(i).getScore());
-                // 其他字段解析...
-                results.add(item);
-            }
         } catch (Exception e) {
             log.error("Failed to search vectors: {}", e.getMessage());
         }
