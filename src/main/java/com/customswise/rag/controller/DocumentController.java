@@ -7,6 +7,8 @@ import com.customswise.rag.repository.PolicyDocumentRepository;
 import com.customswise.rag.service.DocumentService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
+import io.swagger.v3.oas.annotations.media.Content;
+import io.swagger.v3.oas.annotations.media.Encoding;
 import io.swagger.v3.oas.annotations.media.Schema;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import org.springframework.data.domain.Page;
@@ -28,7 +30,16 @@ public class DocumentController {
         this.documentRepository = documentRepository;
     }
 
-    @Operation(summary = "上传政策文档", description = "上传PDF格式的政策文档并自动解析、向量化。Swagger不支持文件上传测试，请使用Postman或curl测试。")
+    @Operation(
+        summary = "上传政策文档",
+        description = "上传PDF格式的政策文档并自动解析、向量化",
+        requestBody = @io.swagger.v3.oas.annotations.RequestBody(
+            content = @Content(
+                mediaType = "multipart/form-data",
+                schema = @Schema(implementation = DocumentUploadForm.class)
+            )
+        )
+    )
     @PostMapping(value = "/upload", consumes = "multipart/form-data")
     public ApiResponse<PolicyDocument> upload(
             @Parameter(description = "政策文档文件(PDF)", schema = @Schema(type = "string", format = "binary"))
@@ -65,6 +76,36 @@ public class DocumentController {
         } catch (Exception e) {
             return ApiResponse.error(e.getMessage());
         }
+    }
+
+    @Schema(name = "DocumentUploadForm", description = "文档上传表单")
+    public static class DocumentUploadForm {
+        @Schema(description = "政策文档文件(PDF)", type = "string", format = "binary")
+        public MultipartFile file;
+
+        @Schema(description = "政策标题")
+        public String title;
+
+        @Schema(description = "公告编号")
+        public String documentNumber;
+
+        @Schema(description = "发布时间 yyyy-MM-dd")
+        public String publishDate;
+
+        @Schema(description = "生效时间 yyyy-MM-dd")
+        public String effectiveDate;
+
+        @Schema(description = "失效时间 yyyy-MM-dd")
+        public String expireDate;
+
+        @Schema(description = "状态：现行/已废止", example = "现行")
+        public String status = "现行";
+
+        @Schema(description = "适用业务标签，多个用逗号分隔")
+        public String applicableBusiness;
+
+        @Schema(description = "政策摘要")
+        public String summary;
     }
 
     @Operation(summary = "获取文档列表", description = "分页查询政策文档，支持按状态和业务标签筛选")
