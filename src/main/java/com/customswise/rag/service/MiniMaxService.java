@@ -82,6 +82,7 @@ public class MiniMaxService {
             Map<String, Object> requestBody = new HashMap<>();
             requestBody.put("model", config.getEmbeddingModel());
             requestBody.put("texts", Collections.singletonList(text));
+            requestBody.put("type", "db");
 
             HttpPost post = new HttpPost(url);
             post.setHeader("Authorization", "Bearer " + config.getApiKey());
