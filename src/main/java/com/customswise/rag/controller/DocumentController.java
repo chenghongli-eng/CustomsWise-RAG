@@ -7,6 +7,7 @@ import com.customswise.rag.repository.PolicyDocumentRepository;
 import com.customswise.rag.service.DocumentService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
+import io.swagger.v3.oas.annotations.media.Schema;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
@@ -27,10 +28,11 @@ public class DocumentController {
         this.documentRepository = documentRepository;
     }
 
-    @Operation(summary = "上传政策文档", description = "上传PDF格式的政策文档并自动解析、向量化")
-    @PostMapping("/upload")
+    @Operation(summary = "上传政策文档", description = "上传PDF格式的政策文档并自动解析、向量化。Swagger不支持文件上传测试，请使用Postman或curl测试。")
+    @PostMapping(value = "/upload", consumes = "multipart/form-data")
     public ApiResponse<PolicyDocument> upload(
-            @Parameter(description = "政策文档文件(PDF)") @RequestParam("file") MultipartFile file,
+            @Parameter(description = "政策文档文件(PDF)", schema = @Schema(type = "string", format = "binary"))
+            @RequestParam("file") MultipartFile file,
             @Parameter(description = "政策标题") @RequestParam("title") String title,
             @Parameter(description = "公告编号") @RequestParam(value = "documentNumber", required = false) String documentNumber,
             @Parameter(description = "发布时间 yyyy-MM-dd") @RequestParam(value = "publishDate", required = false) String publishDate,
