@@ -39,7 +39,7 @@ public class MilvusService {
                     .build());
             log.info("Collection exists: {}", collectionName);
         } catch (Exception e) {
-            log.warn("Collection does not exist: {}", collectionName);
+            log.warn("Collection does not exist: {}. Please create it using pymilvus.", collectionName);
         }
     }
 
@@ -53,16 +53,15 @@ public class MilvusService {
                 vectorList.add(v);
             }
 
-            Map<String, Object> data = new HashMap<>();
-            data.put("vector", vectorList);
-            data.put("text", text);
-            data.put("document_id", metadata.getOrDefault("document_id", ""));
-
-            List<Map<String, Object>> fields = Collections.singletonList(data);
+            // 使用Fields方式构建插入参数
+            List<InsertParam.Field> fields = new ArrayList<>();
+            fields.add(new InsertParam.Field("vector", Collections.singletonList(vectorList)));
+            fields.add(new InsertParam.Field("text", Collections.singletonList(text)));
+            fields.add(new InsertParam.Field("document_id", Collections.singletonList(metadata.getOrDefault("document_id", ""))));
 
             InsertParam param = InsertParam.newBuilder()
                     .withCollectionName(collectionName)
-                    .withData(fields)
+                    .withFields(fields)
                     .build();
 
             milvusClient.insert(param);
