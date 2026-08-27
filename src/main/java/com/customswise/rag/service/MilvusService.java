@@ -2,7 +2,7 @@ package com.customswise.rag.service;
 
 import io.milvus.client.MilvusClient;
 import io.milvus.client.MilvusServiceClient;
-import io.milvus.grpc.DataType;
+import io.milvus.grpc.SearchResults;
 import io.milvus.param.*;
 import io.milvus.param.collection.*;
 import io.milvus.param.dml.*;
@@ -22,8 +22,6 @@ public class MilvusService {
     @Value("${milvus.collection-name}")
     private String collectionName;
 
-    private static final int VECTOR_DIM = 1536;
-
     public MilvusService(MilvusClient milvusClient) {
         this.milvusClient = milvusClient;
     }
@@ -41,21 +39,9 @@ public class MilvusService {
             milvusClient.describeCollection(DescribeCollectionParam.newBuilder()
                     .withCollectionName(collectionName)
                     .build());
-            log.info("Collection already exists: {}", collectionName);
+            log.info("Collection exists: {}", collectionName);
         } catch (Exception e) {
-            log.info("Collection does not exist, creating: {}", collectionName);
-            try {
-                milvusClient.createCollection(
-                        CreateCollectionParam.newBuilder()
-                                .withCollectionName(collectionName)
-                                .withDimension(VECTOR_DIM)
-                                .withDescription("CustomsWise RAG vectors")
-                                .build()
-                );
-                log.info("Collection created: {}", collectionName);
-            } catch (Exception ex) {
-                log.error("Failed to create collection: {}", ex.getMessage());
-            }
+            log.warn("Collection does not exist: {}. Please create it using pymilvus or Milvus CLI.", collectionName);
         }
     }
 
@@ -64,14 +50,11 @@ public class MilvusService {
      */
     public String insertVector(String text, float[] vector, Map<String, String> metadata) {
         try {
-            ensureCollectionExists();
-
             List<Float> vectorList = new ArrayList<>();
             for (float v : vector) {
                 vectorList.add(v);
             }
 
-            // 使用动态字段存储额外信息
             Map<String, Object> data = new HashMap<>();
             data.put("vector", vectorList);
             data.put("text", text);
@@ -99,8 +82,6 @@ public class MilvusService {
     public List<Map<String, Object>> searchVectors(float[] queryVector, int topK) {
         List<Map<String, Object>> results = new ArrayList<>();
         try {
-            ensureCollectionExists();
-
             List<Float> vectorList = new ArrayList<>();
             for (float v : queryVector) {
                 vectorList.add(v);
@@ -114,13 +95,14 @@ public class MilvusService {
                     .build();
 
             SearchResults searchResults = milvusClient.search(param);
-            log.info("Search completed, results: {}", searchResults.getResults().getRowRecordsCount());
 
-            // 解析结果
-            for (int i = 0; i < searchResults.getResults().getRowRecordsCount(); i++) {
-                Map<String, Object> item = new HashMap<>();
-                item.put("score", searchResults.getResults().getScores(i));
-                results.add(item);
+            if (searchResults != null && searchResults.getResults() != null) {
+                log.info("Search completed, results count: {}", searchResults.getResults().getRowRecordsCount());
+                for (int i = 0; i < searchResults.getResults().getRowRecordsCount(); i++) {
+                    Map<String, Object> item = new HashMap<>();
+                    item.put("score", searchResults.getResults().getScores(i));
+                    results.add(item);
+                }
             }
 
         } catch (Exception e) {
