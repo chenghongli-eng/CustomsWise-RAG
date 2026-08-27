@@ -27,13 +27,7 @@ public class QaController {
 
     @Operation(
         summary = "提交问答",
-        description = "输入问题，获取基于政策知识库的智能回答。系统会优先参考现行政策，已废止政策会明确标注。",
-        requestBody = @io.swagger.v3.oas.annotations.RequestBody(
-            content = @Content(
-                mediaType = "application/json",
-                schema = @Schema(implementation = QaRequest.class)
-            )
-        )
+        description = "输入问题，获取基于政策知识库的智能回答。系统会优先参考现行政策，已废止政策会明确标注。"
     )
     @PostMapping("/ask")
     public ApiResponse<QaResponse> ask(@RequestBody QaRequest request) {
