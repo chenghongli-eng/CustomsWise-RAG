@@ -19,8 +19,8 @@ public class CustomsWiseRagApplication {
             System.out.println("\n========================================");
             System.out.println("  CustomsWise RAG 启动成功!");
             System.out.println("========================================");
-            System.out.println("  API文档 (Swagger UI):");
-            System.out.println("  → http://localhost:8080/swagger-ui.html");
+            System.out.println("  API文档 (Knife4j):");
+            System.out.println("  → http://localhost:8080/doc.html");
             System.out.println("");
             System.out.println("  OpenAPI JSON:");
             System.out.println("  → http://localhost:8080/v3/api-docs");

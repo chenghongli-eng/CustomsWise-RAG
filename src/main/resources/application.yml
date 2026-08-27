@@ -5,6 +5,23 @@ spring:
   application:
     name: customswise-rag
 
+  # Knife4j配置
+  mvc:
+    pathmatch:
+      matching-strategy: ant_path_matcher
+
+# Knife4j配置
+knife4j:
+  enable: true
+  openapi:
+    title: CustomsWise RAG API
+    description: 跨境电商海关政策智能RAG助手 API文档
+    version: 1.0.0
+    contact:
+      name: CustomsWise
+      email: support@customswise.com
+      url: https://github.com/chenghongli-eng/CustomsWise-RAG
+
   datasource:
     url: jdbc:postgresql://localhost:5432/customswise_rag
     username: customswise
