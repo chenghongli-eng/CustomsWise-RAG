@@ -6,7 +6,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.http.client.methods.HttpPost;
 import org.apache.http.entity.StringEntity;
-import org.apache.http.impl.client.CloseableHttpClient;
+import org.apache.http.impl.client.HttpClients;
 import org.apache.http.util.EntityUtils;
 import org.springframework.stereotype.Service;
 
@@ -18,12 +18,10 @@ import java.util.*;
 public class MiniMaxService {
 
     private final MiniMaxConfig config;
-    private final CloseableHttpClient httpClient;
     private final ObjectMapper objectMapper;
 
-    public MiniMaxService(MiniMaxConfig config, CloseableHttpClient httpClient) {
+    public MiniMaxService(MiniMaxConfig config) {
         this.config = config;
-        this.httpClient = httpClient;
         this.objectMapper = new ObjectMapper();
     }
 
@@ -48,7 +46,8 @@ public class MiniMaxService {
             post.setHeader("Content-Type", "application/json");
             post.setEntity(new StringEntity(objectMapper.writeValueAsString(requestBody), StandardCharsets.UTF_8));
 
-            try (CloseableHttpClient client = httpClient) {
+            var client = HttpClients.createDefault();
+            try {
                 var response = client.execute(post);
                 int statusCode = response.getStatusLine().getStatusCode();
                 String jsonResponse = EntityUtils.toString(response.getEntity());
@@ -64,6 +63,8 @@ public class MiniMaxService {
                     return choices.get(0).path("messages").asText();
                 }
                 return "MiniMax API响应格式异常";
+            } finally {
+                client.close();
             }
         } catch (Exception e) {
             log.error("MiniMax chat error", e);
@@ -87,7 +88,8 @@ public class MiniMaxService {
             post.setHeader("Content-Type", "application/json");
             post.setEntity(new StringEntity(objectMapper.writeValueAsString(requestBody), StandardCharsets.UTF_8));
 
-            try (CloseableHttpClient client = httpClient) {
+            var client = HttpClients.createDefault();
+            try {
                 var response = client.execute(post);
                 int statusCode = response.getStatusLine().getStatusCode();
                 String jsonResponse = EntityUtils.toString(response.getEntity());
@@ -99,7 +101,6 @@ public class MiniMaxService {
                 }
 
                 JsonNode root = objectMapper.readTree(jsonResponse);
-                // MiniMax may return either "vectors" or "data" field
                 JsonNode vectors = root.path("vectors");
                 if (vectors.isArray() && vectors.size() > 0) {
                     JsonNode embedding = vectors.get(0);
@@ -118,12 +119,13 @@ public class MiniMaxService {
                     }
                     return result;
                 }
+            } finally {
+                client.close();
             }
         } catch (Exception e) {
             log.error("MiniMax embedding error: {}", e.getMessage());
         }
 
-        // 如果embedding失败，生成一个基于文本的简单向量（仅用于测试）
         return generateFallbackVector(text);
     }
 
@@ -135,9 +137,8 @@ public class MiniMaxService {
         int hash = text.hashCode();
         Random random = new Random(hash);
         for (int i = 0; i < 1536; i++) {
-            result[i] = (random.nextFloat() * 2) - 1; // -1 到 1
+            result[i] = (random.nextFloat() * 2) - 1;
         }
-        // 归一化
         double sum = 0;
         for (float v : result) {
             sum += v * v;
