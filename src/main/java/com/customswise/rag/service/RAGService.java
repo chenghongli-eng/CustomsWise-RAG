@@ -63,33 +63,46 @@ public class RAGService {
         List<Map<String, Object>> searchResults = milvusService.searchVectors(queryVector, topK * 2);
         log.info("检索到 {} 条结果", searchResults.size());
 
-        // 3. 打印检索结果
+        // 3. 把 Milvus 的 L2 距离转成相似度（越大越相关），并打印
         for (int i = 0; i < searchResults.size(); i++) {
             Map<String, Object> result = searchResults.get(i);
+            float l2 = (float) result.getOrDefault("score", 0f);
+            float similarity = 1f / (1f + l2);   // 距离→相似度
+            result.put("similarity", similarity);
+
             String text = (String) result.getOrDefault("text", "");
             String docId = (String) result.getOrDefault("document_id", "");
-            log.info("结果{} - docId: {}, text: {}", i, docId, text.length() > 50 ? text.substring(0, 50) + "..." : text);
+            String status = (String) result.getOrDefault("status", "现行");
+            log.info("结果{} - docId: {}, status: {}, similarity: {:.4f}, text: {}",
+                    i, docId, status, similarity,
+                    text.length() > 50 ? text.substring(0, 50) + "..." : text);
         }
 
-        // 4. 根据状态重新排序 - 现行政策优先
+        // 4. 根据状态重新排序 - 现行政策加权优先
         searchResults.sort((a, b) -> {
-            float scoreA = (float) a.get("score");
-            float scoreB = (float) b.get("score");
+            float simA = (float) a.get("similarity");
+            float simB = (float) b.get("similarity");
             String statusA = (String) a.getOrDefault("status", "现行");
             String statusB = (String) b.getOrDefault("status", "现行");
 
             // 现行政策加分，已废止减分
-            if ("现行".equals(statusA)) scoreA *= currentPolicyBoost;
-            else scoreA *= expiredPolicyPenalty;
+            if ("现行".equals(statusA)) simA *= currentPolicyBoost;
+            else simA *= expiredPolicyPenalty;
 
-            if ("现行".equals(statusB)) scoreB *= currentPolicyBoost;
-            else scoreB *= expiredPolicyPenalty;
+            if ("现行".equals(statusB)) simB *= currentPolicyBoost;
+            else simB *= expiredPolicyPenalty;
 
-            return Float.compare(scoreB, scoreA);
+            return Float.compare(simB, simA);
         });
 
-        // 5. 取topK
+        // 5. 取 topK 用于生成上下文
         List<Map<String, Object>> topResults = searchResults.subList(0, Math.min(rerankTopK, searchResults.size()));
+        log.info("排序后选 top{}:", rerankTopK);
+        for (int i = 0; i < topResults.size(); i++) {
+            Map<String, Object> r = topResults.get(i);
+            log.info("  top{} - docId: {}, status: {}, similarity: {:.4f}",
+                    i, r.get("document_id"), r.get("status"), r.get("similarity"));
+        }
 
         // 6. 构建上下文
         StringBuilder context = new StringBuilder();

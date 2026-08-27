@@ -1,9 +1,12 @@
 package com.customswise.rag.service;
 
 import io.milvus.client.MilvusClient;
+import io.milvus.grpc.DataType;
 import io.milvus.param.*;
 import io.milvus.param.collection.*;
 import io.milvus.param.dml.*;
+import io.milvus.param.index.CreateIndexParam;
+import io.milvus.response.SearchResultsWrapper;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
@@ -26,7 +29,103 @@ public class MilvusService {
 
     @PostConstruct
     public void init() {
-        log.info("MilvusService initialized with collection: {}", collectionName);
+        try {
+            milvusClient.describeCollection(DescribeCollectionParam.newBuilder()
+                    .withCollectionName(collectionName)
+                    .build());
+            // 校验 schema 完整性，缺 status 字段则视为旧版本，重建
+            if (!hasStatusField()) {
+                log.warn("Collection {} 缺少 status 字段，按旧 schema 处理: 将重建", collectionName);
+                milvusClient.dropCollection(DropCollectionParam.newBuilder()
+                        .withCollectionName(collectionName).build());
+                createCollection();
+            } else {
+                log.info("Collection已存在: {}（schema 完整，保留数据）", collectionName);
+            }
+        } catch (Exception e) {
+            log.info("Collection不存在，开始创建: {}", collectionName);
+            createCollection();
+        }
+    }
+
+    private boolean hasStatusField() {
+        try {
+            var resp = milvusClient.describeCollection(DescribeCollectionParam.newBuilder()
+                    .withCollectionName(collectionName)
+                    .build());
+            if (resp.getStatus() != R.Status.Success.getCode()) {
+                return false;
+            }
+            for (io.milvus.grpc.FieldSchema f : resp.getData().getSchema().getFieldsList()) {
+                if ("status".equals(f.getName())) {
+                    return true;
+                }
+            }
+            return false;
+        } catch (Exception e) {
+            log.warn("检查status字段失败: {}", e.getMessage());
+            return false;
+        }
+    }
+
+    /**
+     * 创建Collection（仅在没有时调用，不删除已有数据）
+     */
+    public void createCollection() {
+        try {
+            CreateCollectionParam createParam = CreateCollectionParam.newBuilder()
+                    .withCollectionName(collectionName)
+                    .withDescription("海关政策文档向量库")
+                    .withFieldTypes(Arrays.asList(
+                            FieldType.newBuilder()
+                                    .withName("id")
+                                    .withDataType(DataType.Int64)
+                                    .withPrimaryKey(true)
+                                    .withAutoID(true)
+                                    .build(),
+                            FieldType.newBuilder()
+                                    .withName("vector")
+                                    .withDataType(DataType.FloatVector)
+                                    .withDimension(1536)
+                                    .build(),
+                            FieldType.newBuilder()
+                                    .withName("text")
+                                    .withDataType(DataType.VarChar)
+                                    .withMaxLength(65535)
+                                    .build(),
+                            FieldType.newBuilder()
+                                    .withName("document_id")
+                                    .withDataType(DataType.VarChar)
+                                    .withMaxLength(100)
+                                    .build(),
+                            FieldType.newBuilder()
+                                    .withName("status")
+                                    .withDataType(DataType.VarChar)
+                                    .withMaxLength(20)
+                                    .build()
+                    ))
+                    .build();
+
+            milvusClient.createCollection(createParam);
+            log.info("✅ 已创建collection: {}", collectionName);
+
+            CreateIndexParam indexParam = CreateIndexParam.newBuilder()
+                    .withCollectionName(collectionName)
+                    .withFieldName("vector")
+                    .withIndexType(IndexType.IVF_FLAT)
+                    .withMetricType(MetricType.L2)
+                    .build();
+            milvusClient.createIndex(indexParam);
+            log.info("✅ 已创建索引");
+
+            milvusClient.loadCollection(LoadCollectionParam.newBuilder()
+                    .withCollectionName(collectionName)
+                    .build());
+            log.info("✅ 已加载collection到内存");
+
+        } catch (Exception e) {
+            log.error("❌ 初始化collection失败: {}", e.getMessage(), e);
+        }
     }
 
     /**
@@ -39,7 +138,8 @@ public class MilvusService {
                     .build());
             log.info("Collection exists: {}", collectionName);
         } catch (Exception e) {
-            log.warn("Collection does not exist: {}. Please create it using pymilvus.", collectionName);
+            log.warn("Collection不存在，将创建: {}", collectionName);
+            createCollection();
         }
     }
 
@@ -48,20 +148,19 @@ public class MilvusService {
      */
     public String insertVector(String text, float[] vector, Map<String, String> metadata) {
         try {
+            ensureCollectionExists();
+
             List<Float> vectorList = new ArrayList<>();
             for (float v : vector) {
                 vectorList.add(v);
             }
 
-            // 生成唯一ID
-            long id = System.currentTimeMillis();
-
             // 使用Fields方式构建插入参数
             List<InsertParam.Field> fields = new ArrayList<>();
-            fields.add(new InsertParam.Field("id", Collections.singletonList(id)));
             fields.add(new InsertParam.Field("vector", Collections.singletonList(vectorList)));
             fields.add(new InsertParam.Field("text", Collections.singletonList(text)));
             fields.add(new InsertParam.Field("document_id", Collections.singletonList(metadata.getOrDefault("document_id", ""))));
+            fields.add(new InsertParam.Field("status", Collections.singletonList(metadata.getOrDefault("status", "现行"))));
 
             InsertParam param = InsertParam.newBuilder()
                     .withCollectionName(collectionName)
@@ -69,10 +168,11 @@ public class MilvusService {
                     .build();
 
             milvusClient.insert(param);
-            log.info("Vector inserted for document_id: {}", metadata.getOrDefault("document_id", ""));
+            log.info("✅ 向量插入成功，document_id: {}, status: {}, text长度: {}",
+                    metadata.getOrDefault("document_id", ""), metadata.getOrDefault("status", "现行"), text.length());
             return "success";
         } catch (Exception e) {
-            log.error("Failed to insert vector: {}", e.getMessage());
+            log.error("❌ 插入向量失败: {}", e.getMessage());
             return null;
         }
     }
@@ -83,6 +183,8 @@ public class MilvusService {
     public List<Map<String, Object>> searchVectors(float[] queryVector, int topK) {
         List<Map<String, Object>> results = new ArrayList<>();
         try {
+            ensureCollectionExists();
+
             List<Float> vectorList = new ArrayList<>();
             for (float v : queryVector) {
                 vectorList.add(v);
@@ -93,13 +195,46 @@ public class MilvusService {
                     .withVectorFieldName("vector")
                     .withTopK(topK)
                     .withFloatVectors(Collections.singletonList(vectorList))
+                    .withOutFields(Arrays.asList("text", "document_id", "status"))
                     .build();
 
-            milvusClient.search(param);
-            log.info("Search completed for topK: {}", topK);
+            var resp = milvusClient.search(param);
+            if (resp.getStatus() != R.Status.Success.getCode()) {
+                log.error("搜索失败: {}", resp.getMessage());
+                return results;
+            }
+            SearchResultsWrapper wrapper = new SearchResultsWrapper(resp.getData().getResults());
+
+            List<?> textData = wrapper.getFieldWrapper("text").getFieldData();
+            List<?> docIdData = wrapper.getFieldWrapper("document_id").getFieldData();
+            List<?> statusData = wrapper.getFieldWrapper("status").getFieldData();
+            log.info("搜索完成，textData.size={}, docIdData.size={}, statusData.size={}",
+                    textData.size(), docIdData.size(), statusData.size());
+
+            // 通过 IDScore 补全 score
+            List<SearchResultsWrapper.IDScore> idScores = null;
+            try {
+                idScores = wrapper.getIDScore(0);
+            } catch (Exception e) {
+                log.warn("获取score失败: {}", e.getMessage());
+            }
+
+            int count = textData.size();
+            for (int i = 0; i < count; i++) {
+                Map<String, Object> result = new HashMap<>();
+                Object textVal = textData.get(i);
+                Object docIdVal = docIdData.get(i);
+                Object statusVal = statusData.get(i);
+                result.put("text", textVal != null ? textVal.toString() : "");
+                result.put("document_id", docIdVal != null ? docIdVal.toString() : "");
+                result.put("status", statusVal != null ? statusVal.toString() : "现行");
+                float score = (idScores != null && i < idScores.size()) ? idScores.get(i).getScore() : 0.0f;
+                result.put("score", score);
+                results.add(result);
+            }
 
         } catch (Exception e) {
-            log.error("Failed to search vectors: {}", e.getMessage());
+            log.error("❌ 搜索失败: {}", e.getMessage());
         }
         return results;
     }
@@ -114,9 +249,9 @@ public class MilvusService {
                     .withExpr("document_id == \"" + documentId + "\"")
                     .build();
             milvusClient.delete(param);
-            log.info("Deleted vectors for document_id: {}", documentId);
+            log.info("已删除document_id: {}的向量", documentId);
         } catch (Exception e) {
-            log.error("Failed to delete vectors: {}", e.getMessage());
+            log.error("删除向量失败: {}", e.getMessage());
         }
     }
 }

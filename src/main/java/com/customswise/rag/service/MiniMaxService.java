@@ -34,7 +34,7 @@ public class MiniMaxService {
 
             Map<String, Object> requestBody = new HashMap<>();
             requestBody.put("model", config.getModel());
-            requestBody.put("tokens_to_generate", 1024);
+            requestBody.put("tokens_to_generate", 2048);
 
             Map<String, Object> role = new HashMap<>();
             role.put("role", "user");
@@ -57,10 +57,19 @@ public class MiniMaxService {
                     return "调用MiniMax API失败，状态码: " + statusCode;
                 }
 
+                log.info("MiniMax chat response: {}", jsonResponse);
                 JsonNode root = objectMapper.readTree(jsonResponse);
                 JsonNode choices = root.path("choices");
                 if (choices.isArray() && choices.size() > 0) {
-                    return choices.get(0).path("messages").asText();
+                    JsonNode first = choices.get(0);
+                    String answer = first.path("message").path("content").asText("");
+                    if (answer.isEmpty()) {
+                        answer = first.path("messages").asText("");
+                    }
+                    if (answer.isEmpty()) {
+                        answer = first.path("text").asText("");
+                    }
+                    return answer;
                 }
                 return "MiniMax API响应格式异常";
             } finally {
