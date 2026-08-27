@@ -53,8 +53,12 @@ public class MilvusService {
                 vectorList.add(v);
             }
 
+            // 生成唯一ID
+            long id = System.currentTimeMillis();
+
             // 使用Fields方式构建插入参数
             List<InsertParam.Field> fields = new ArrayList<>();
+            fields.add(new InsertParam.Field("id", Collections.singletonList(id)));
             fields.add(new InsertParam.Field("vector", Collections.singletonList(vectorList)));
             fields.add(new InsertParam.Field("text", Collections.singletonList(text)));
             fields.add(new InsertParam.Field("document_id", Collections.singletonList(metadata.getOrDefault("document_id", ""))));
