@@ -5,6 +5,9 @@ import com.customswise.rag.dto.DocumentUploadRequest;
 import com.customswise.rag.entity.PolicyDocument;
 import com.customswise.rag.repository.PolicyDocumentRepository;
 import com.customswise.rag.service.DocumentService;
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.Parameter;
+import io.swagger.v3.oas.annotations.tags.Tag;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.web.bind.annotation.*;
@@ -12,6 +15,7 @@ import org.springframework.web.multipart.MultipartFile;
 
 @RestController
 @RequestMapping("/api/documents")
+@Tag(name = "文档管理", description = "政策文档的上传、查询、删除等管理功能")
 public class DocumentController {
 
     private final DocumentService documentService;
@@ -23,20 +27,18 @@ public class DocumentController {
         this.documentRepository = documentRepository;
     }
 
-    /**
-     * 上传政策文档
-     */
+    @Operation(summary = "上传政策文档", description = "上传PDF格式的政策文档并自动解析、向量化")
     @PostMapping("/upload")
     public ApiResponse<PolicyDocument> upload(
-            @RequestParam("file") MultipartFile file,
-            @RequestParam("title") String title,
-            @RequestParam(value = "documentNumber", required = false) String documentNumber,
-            @RequestParam(value = "publishDate", required = false) String publishDate,
-            @RequestParam(value = "effectiveDate", required = false) String effectiveDate,
-            @RequestParam(value = "expireDate", required = false) String expireDate,
-            @RequestParam(value = "status", defaultValue = "现行") String status,
-            @RequestParam(value = "applicableBusiness", required = false) String applicableBusiness,
-            @RequestParam(value = "summary", required = false) String summary) {
+            @Parameter(description = "政策文档文件(PDF)") @RequestParam("file") MultipartFile file,
+            @Parameter(description = "政策标题") @RequestParam("title") String title,
+            @Parameter(description = "公告编号") @RequestParam(value = "documentNumber", required = false) String documentNumber,
+            @Parameter(description = "发布时间 yyyy-MM-dd") @RequestParam(value = "publishDate", required = false) String publishDate,
+            @Parameter(description = "生效时间 yyyy-MM-dd") @RequestParam(value = "effectiveDate", required = false) String effectiveDate,
+            @Parameter(description = "失效时间 yyyy-MM-dd") @RequestParam(value = "expireDate", required = false) String expireDate,
+            @Parameter(description = "状态：现行/已废止") @RequestParam(value = "status", defaultValue = "现行") String status,
+            @Parameter(description = "适用业务标签，多个用逗号分隔") @RequestParam(value = "applicableBusiness", required = false) String applicableBusiness,
+            @Parameter(description = "政策摘要") @RequestParam(value = "summary", required = false) String summary) {
 
         try {
             DocumentUploadRequest request = new DocumentUploadRequest();
@@ -63,15 +65,13 @@ public class DocumentController {
         }
     }
 
-    /**
-     * 获取文档列表
-     */
+    @Operation(summary = "获取文档列表", description = "分页查询政策文档，支持按状态和业务标签筛选")
     @GetMapping
     public ApiResponse<Page<PolicyDocument>> list(
-            @RequestParam(defaultValue = "0") int page,
-            @RequestParam(defaultValue = "10") int size,
-            @RequestParam(required = false) String status,
-            @RequestParam(required = false) String applicableBusiness) {
+            @Parameter(description = "页码") @RequestParam(defaultValue = "0") int page,
+            @Parameter(description = "每页数量") @RequestParam(defaultValue = "10") int size,
+            @Parameter(description = "状态筛选：现行/已废止") @RequestParam(required = false) String status,
+            @Parameter(description = "适用业务标签") @RequestParam(required = false) String applicableBusiness) {
 
         Page<PolicyDocument> documents = documentRepository.findByFilters(
                 status,
@@ -81,21 +81,19 @@ public class DocumentController {
         return ApiResponse.success(documents);
     }
 
-    /**
-     * 获取单个文档
-     */
+    @Operation(summary = "获取单个文档", description = "根据ID获取政策文档详情")
     @GetMapping("/{id}")
-    public ApiResponse<PolicyDocument> getById(@PathVariable Long id) {
+    public ApiResponse<PolicyDocument> getById(
+            @Parameter(description = "文档ID") @PathVariable Long id) {
         return documentRepository.findById(id)
                 .map(ApiResponse::success)
                 .orElse(ApiResponse.error("文档不存在"));
     }
 
-    /**
-     * 删除文档
-     */
+    @Operation(summary = "删除文档", description = "软删除政策文档，同时清理Milvus中的向量")
     @DeleteMapping("/{id}")
-    public ApiResponse<Void> delete(@PathVariable Long id) {
+    public ApiResponse<Void> delete(
+            @Parameter(description = "文档ID") @PathVariable Long id) {
         try {
             documentService.deleteDocument(id);
             return ApiResponse.success("删除成功", null);
@@ -104,11 +102,11 @@ public class DocumentController {
         }
     }
 
-    /**
-     * 更新文档元数据
-     */
+    @Operation(summary = "更新文档元数据", description = "更新政策文档的元数据信息")
     @PutMapping("/{id}")
-    public ApiResponse<PolicyDocument> update(@PathVariable Long id, @RequestBody DocumentUploadRequest request) {
+    public ApiResponse<PolicyDocument> update(
+            @Parameter(description = "文档ID") @PathVariable Long id,
+            @RequestBody DocumentUploadRequest request) {
         try {
             PolicyDocument document = documentService.updateDocument(id, request);
             return ApiResponse.success("更新成功", document);
