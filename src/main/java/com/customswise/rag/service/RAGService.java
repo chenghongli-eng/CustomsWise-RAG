@@ -167,10 +167,10 @@ public class RAGService {
             history.setUserQuery(request.getQuestion());
             history.setUserConditions(request.getUserConditions());
             history.setAiResponse(answer);
-            history.setReferencesInfo(objectMapper.writeValueAsString(references));
+            history.setReferences(references);
             history.setCreatedAt(LocalDateTime.now());
             qaHistoryRepository.save(history);
-        } catch (JsonProcessingException e) {
+        } catch (Exception e) {
             log.error("Failed to save QA history", e);
         }
     }
