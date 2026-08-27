@@ -76,7 +76,7 @@ public class MiniMaxService {
      */
     public float[] embed(String text) {
         try {
-            String url = config.getBaseUrl() + "/v1/text/embeddings";
+            String url = config.getBaseUrl() + "/v1/embeddings";
 
             Map<String, Object> requestBody = new HashMap<>();
             requestBody.put("model", config.getEmbeddingModel());
@@ -91,6 +91,7 @@ public class MiniMaxService {
                 var response = client.execute(post);
                 int statusCode = response.getStatusLine().getStatusCode();
                 String jsonResponse = EntityUtils.toString(response.getEntity());
+                log.info("MiniMax Embedding response status: {}, body: {}", statusCode, jsonResponse);
 
                 if (statusCode != 200) {
                     log.error("MiniMax Embedding API error, status: {}, response: {}", statusCode, jsonResponse);
@@ -98,6 +99,16 @@ public class MiniMaxService {
                 }
 
                 JsonNode root = objectMapper.readTree(jsonResponse);
+                // MiniMax may return either "vectors" or "data" field
+                JsonNode vectors = root.path("vectors");
+                if (vectors.isArray() && vectors.size() > 0) {
+                    JsonNode embedding = vectors.get(0);
+                    float[] result = new float[embedding.size()];
+                    for (int i = 0; i < embedding.size(); i++) {
+                        result[i] = (float) embedding.get(i).asDouble();
+                    }
+                    return result;
+                }
                 JsonNode data = root.path("data");
                 if (data.isArray() && data.size() > 0) {
                     JsonNode embedding = data.get(0).path("embedding");
