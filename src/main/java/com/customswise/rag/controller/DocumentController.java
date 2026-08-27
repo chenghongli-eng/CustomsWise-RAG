@@ -7,8 +7,6 @@ import com.customswise.rag.repository.PolicyDocumentRepository;
 import com.customswise.rag.service.DocumentService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
-import io.swagger.v3.oas.annotations.media.Content;
-import io.swagger.v3.oas.annotations.media.Encoding;
 import io.swagger.v3.oas.annotations.media.Schema;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import org.springframework.data.domain.Page;
@@ -32,17 +30,10 @@ public class DocumentController {
 
     @Operation(
         summary = "上传政策文档",
-        description = "上传PDF格式的政策文档并自动解析、向量化",
-        requestBody = @io.swagger.v3.oas.annotations.RequestBody(
-            content = @Content(
-                mediaType = "multipart/form-data",
-                schema = @Schema(implementation = DocumentUploadForm.class)
-            )
-        )
+        description = "上传PDF格式的政策文档并自动解析、向量化"
     )
     @PostMapping(value = "/upload", consumes = "multipart/form-data")
     public ApiResponse<PolicyDocument> upload(
-            @Parameter(description = "政策文档文件(PDF)", schema = @Schema(type = "string", format = "binary"))
             @RequestParam("file") MultipartFile file,
             @Parameter(description = "政策标题") @RequestParam("title") String title,
             @Parameter(description = "公告编号") @RequestParam(value = "documentNumber", required = false) String documentNumber,

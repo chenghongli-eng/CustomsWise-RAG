@@ -146,7 +146,8 @@ public class DocumentService {
      * 保存文件到本地
      */
     private String saveFile(MultipartFile file) throws IOException {
-        Path uploadPath = Paths.get(uploadDir);
+        // 使用绝对路径，确保在项目根目录下
+        Path uploadPath = Paths.get(System.getProperty("user.dir"), uploadDir);
         if (!Files.exists(uploadPath)) {
             Files.createDirectories(uploadPath);
         }
