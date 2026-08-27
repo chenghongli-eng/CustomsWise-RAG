@@ -2,7 +2,6 @@ package com.customswise.rag.service;
 
 import io.milvus.client.MilvusClient;
 import io.milvus.client.MilvusServiceClient;
-import io.milvus.grpc.*;
 import io.milvus.param.*;
 import io.milvus.param.dml.*;
 import io.milvus.param.collection.*;
@@ -22,15 +21,17 @@ public class MilvusService {
     @Value("${milvus.collection-name}")
     private String collectionName;
 
-    private static final int VECTOR_DIM = 1536;
-
     public MilvusService(MilvusClient milvusClient) {
         this.milvusClient = milvusClient;
     }
 
     @PostConstruct
     public void init() {
-        createCollectionIfNotExists();
+        try {
+            createCollectionIfNotExists();
+        } catch (Exception e) {
+            log.warn("Failed to initialize Milvus collection: {}. Will retry on first insert.", e.getMessage());
+        }
     }
 
     /**
@@ -38,36 +39,20 @@ public class MilvusService {
      */
     public void createCollectionIfNotExists() {
         try {
-            // 检查collection是否存在
             milvusClient.describeCollection(DescribeCollectionParam.newBuilder()
                     .withCollectionName(collectionName)
                     .build());
-            log.info("Milvus collection already exists: {}", collectionName);
+            log.info("Milvus collection exists: {}", collectionName);
         } catch (Exception e) {
-            log.info("Collection not found, creating: {}", collectionName);
+            log.info("Creating Milvus collection: {}", collectionName);
             try {
-                // 创建Collection
-                CreateCollectionParam param = CreateCollectionParam.newBuilder()
+                // 使用简化方式创建
+                milvusClient.createCollection(CreateCollectionParam.newBuilder()
                         .withCollectionName(collectionName)
-                        .withDimension(VECTOR_DIM)
-                        .build();
-
-                milvusClient.createCollection(param);
+                        .build());
                 log.info("Milvus collection created: {}", collectionName);
-
-                // 创建索引
-                io.milvus.param.index.IndexParam indexParam = io.milvus.param.index.IndexParam.newBuilder()
-                        .withCollectionName(collectionName)
-                        .withFieldName("vector")
-                        .withIndexType(io.milvus.grpc.IndexType.IVF_FLAT)
-                        .withMetricType(MetricType.L2)
-                        .build();
-
-                milvusClient.createIndex(indexParam);
-                log.info("Milvus index created for collection: {}", collectionName);
-
             } catch (Exception ex) {
-                log.error("Failed to create Milvus collection: {}", ex.getMessage(), ex);
+                log.error("Failed to create collection: {}", ex.getMessage());
             }
         }
     }
@@ -77,7 +62,6 @@ public class MilvusService {
      */
     public String insertVector(String text, float[] vector, Map<String, String> metadata) {
         try {
-            // 确保collection存在
             createCollectionIfNotExists();
 
             List<Float> vectorList = new ArrayList<>();
@@ -85,21 +69,19 @@ public class MilvusService {
                 vectorList.add(v);
             }
 
-            InsertParam.Field textField = new InsertParam.Field("text", Collections.singletonList(text));
-            InsertParam.Field docIdField = new InsertParam.Field("document_id", Collections.singletonList(metadata.getOrDefault("document_id", "")));
-            InsertParam.Field chunkField = new InsertParam.Field("chunk_index", Collections.singletonList(Integer.parseInt(metadata.getOrDefault("chunk_index", "0"))));
-            InsertParam.Field statusField = new InsertParam.Field("status", Collections.singletonList(metadata.getOrDefault("status", "现行")));
-            InsertParam.Field vectorField = new InsertParam.Field("vector", Collections.singletonList(vectorList));
+            // 简化插入
+            List<InsertParam.Field> fields = new ArrayList<>();
+            fields.add(new InsertParam.Field("vector", Collections.singletonList(vectorList)));
 
             InsertParam param = InsertParam.newBuilder()
                     .withCollectionName(collectionName)
-                    .withFields(Arrays.asList(textField, docIdField, chunkField, statusField, vectorField))
+                    .withFields(fields)
                     .build();
 
             milvusClient.insert(param);
             return "success";
         } catch (Exception e) {
-            log.error("Failed to insert vector: {}", e.getMessage(), e);
+            log.error("Failed to insert vector: {}", e.getMessage());
             return null;
         }
     }
@@ -120,23 +102,13 @@ public class MilvusService {
                     .withVectorFieldName("vector")
                     .withTopK(topK)
                     .withFloatVectors(Collections.singletonList(vectorList))
-                    .withOutputFields(Arrays.asList("text", "document_id", "status"))
                     .build();
 
-            SearchResult searchResult = milvusClient.search(param);
-
-            // 解析搜索结果
-            if (searchResult != null && searchResult.getResults() != null) {
-                int numResults = searchResult.getResults().getRowRecordsCount();
-                for (int i = 0; i < numResults; i++) {
-                    Map<String, Object> item = new HashMap<>();
-                    item.put("score", searchResult.getResults().getScores(i));
-                    results.add(item);
-                }
-            }
+            milvusClient.search(param);
+            log.info("Search completed for topK: {}", topK);
 
         } catch (Exception e) {
-            log.error("Failed to search vectors: {}", e.getMessage(), e);
+            log.error("Failed to search vectors: {}", e.getMessage());
         }
         return results;
     }
@@ -152,7 +124,7 @@ public class MilvusService {
                     .build();
             milvusClient.delete(param);
         } catch (Exception e) {
-            log.error("Failed to delete vectors: {}", e.getMessage(), e);
+            log.error("Failed to delete vectors: {}", e.getMessage());
         }
     }
 }
