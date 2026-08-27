@@ -33,7 +33,7 @@ public class MilvusService {
         try {
             createCollectionIfNotExists();
         } catch (Exception e) {
-            log.warn("Failed to initialize Milvus collection: {}", e.getMessage());
+            log.error("Failed to initialize Milvus collection during startup: {}", e.getMessage());
         }
     }
 
@@ -45,40 +45,60 @@ public class MilvusService {
             milvusClient.describeCollection(DescribeCollectionParam.newBuilder()
                     .withCollectionName(collectionName)
                     .build());
-            log.info("Milvus collection exists: {}", collectionName);
+            log.info("Milvus collection already exists: {}", collectionName);
         } catch (Exception e) {
-            log.info("Creating Milvus collection: {}", collectionName);
-            try {
-                // 构建schema
-                FieldType vectorField = FieldType.newBuilder()
-                        .withName("vector")
-                        .withDataType(DataType.FloatVector)
-                        .withDimension(VECTOR_DIM)
-                        .build();
+            log.info("Collection not found, will attempt to create: {}", collectionName);
+            createCollectionInternal();
+        }
+    }
 
-                FieldType textField = FieldType.newBuilder()
-                        .withName("text")
-                        .withDataType(DataType.VarChar)
-                        .withMaxLength(65535)
-                        .build();
+    private void createCollectionInternal() {
+        try {
+            log.info("Creating Milvus collection with name: {}", collectionName);
 
-                FieldType docIdField = FieldType.newBuilder()
-                        .withName("document_id")
-                        .withDataType(DataType.VarChar)
-                        .withMaxLength(100)
-                        .build();
+            FieldType vectorField = FieldType.newBuilder()
+                    .withName("vector")
+                    .withDataType(DataType.FloatVector)
+                    .withDimension(VECTOR_DIM)
+                    .build();
 
-                CreateCollectionParam param = CreateCollectionParam.newBuilder()
-                        .withCollectionName(collectionName)
-                        .withDescription("CustomsWise RAG document vectors")
-                        .withFieldTypes(Arrays.asList(vectorField, textField, docIdField))
-                        .build();
+            FieldType textField = FieldType.newBuilder()
+                    .withName("text")
+                    .withDataType(DataType.VarChar)
+                    .withMaxLength(65535)
+                    .build();
 
-                milvusClient.createCollection(param);
-                log.info("Milvus collection created successfully: {}", collectionName);
-            } catch (Exception ex) {
-                log.error("Failed to create collection: {}", ex.getMessage());
-            }
+            FieldType docIdField = FieldType.newBuilder()
+                    .withName("document_id")
+                    .withDataType(DataType.VarChar)
+                    .withMaxLength(100)
+                    .build();
+
+            CreateCollectionParam param = CreateCollectionParam.newBuilder()
+                    .withCollectionName(collectionName)
+                    .withDescription("CustomsWise RAG document vectors")
+                    .withFieldTypes(Arrays.asList(vectorField, textField, docIdField))
+                    .build();
+
+            milvusClient.createCollection(param);
+            log.info("Milvus collection created successfully: {}", collectionName);
+
+        } catch (Exception ex) {
+            log.error("Failed to create Milvus collection: {}, error: {}", collectionName, ex.getMessage(), ex);
+        }
+    }
+
+    /**
+     * 确保collection存在（每次插入前调用）
+     */
+    private void ensureCollectionExists() {
+        try {
+            milvusClient.describeCollection(DescribeCollectionParam.newBuilder()
+                    .withCollectionName(collectionName)
+                    .build());
+        } catch (Exception e) {
+            log.warn("Collection does not exist, creating now: {}", collectionName);
+            createCollectionInternal();
         }
     }
 
@@ -87,7 +107,7 @@ public class MilvusService {
      */
     public String insertVector(String text, float[] vector, Map<String, String> metadata) {
         try {
-            createCollectionIfNotExists();
+            ensureCollectionExists();
 
             List<Float> vectorList = new ArrayList<>();
             for (float v : vector) {
@@ -106,6 +126,7 @@ public class MilvusService {
                     .build();
 
             milvusClient.insert(param);
+            log.info("Vector inserted successfully for document_id: {}", metadata.getOrDefault("document_id", ""));
             return "success";
         } catch (Exception e) {
             log.error("Failed to insert vector: {}", e.getMessage());
@@ -119,6 +140,8 @@ public class MilvusService {
     public List<Map<String, Object>> searchVectors(float[] queryVector, int topK) {
         List<Map<String, Object>> results = new ArrayList<>();
         try {
+            ensureCollectionExists();
+
             List<Float> vectorList = new ArrayList<>();
             for (float v : queryVector) {
                 vectorList.add(v);
