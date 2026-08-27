@@ -1,0 +1,51 @@
+server:
+  port: 8080
+
+spring:
+  application:
+    name: customswise-rag
+
+  datasource:
+    url: jdbc:postgresql://localhost:5432/customswise_rag
+    username: customswise
+    password: customswise123
+    driver-class-name: org.postgresql.Driver
+
+  servlet:
+    multipart:
+      max-file-size: 50MB
+      max-request-size: 50MB
+
+  jpa:
+    hibernate:
+      ddl-auto: update
+    show-sql: false
+    properties:
+      hibernate:
+        dialect: org.hibernate.dialect.PostgreSQLDialect
+        format_sql: true
+
+# MiniMax API配置
+minimax:
+  api-key: ${MINIMAX_API_KEY:your_api_key_here}
+  base-url: https://api.minimax.chat
+  model: abab6.5s-chat
+  embedding-model: embo-01
+
+# Milvus向量库配置
+milvus:
+  host: localhost
+  port: 19530
+  collection-name: customswise_docs
+
+# 文件存储配置
+storage:
+  upload-dir: ./uploads
+  max-file-size: 50MB
+
+# RAG配置
+rag:
+  top-k: 10
+  rerank-top-k: 5
+  current-policy-boost: 2.0
+  expired-policy-penalty: 0.3
