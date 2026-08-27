@@ -126,7 +126,7 @@ public class DocumentService {
         }
 
         if (currentChunk.length() > 0) {
-            chunks.add(current.toString().trim());
+            chunks.add(currentChunk.toString().trim());
         }
 
         return chunks;
