@@ -11,11 +11,16 @@ import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.media.Schema;
 import io.swagger.v3.oas.annotations.tags.Tag;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
 
+import java.util.ArrayList;
+import java.util.List;
+
+@Slf4j
 @RestController
 @RequestMapping("/api/documents")
 @Tag(name = "文档管理", description = "政策文档的上传、查询、删除等管理功能")
@@ -34,13 +39,14 @@ public class DocumentController {
     }
 
     @Operation(
-        summary = "上传政策文档（异步）",
-        description = "上传PDF格式的政策文档，立即返回 JobAck；解析与向量化在后台异步执行"
+        summary = "上传政策文档（异步，支持批量）",
+        description = "上传一个或多个 PDF 格式的政策文档，立即返回 JobAck 列表；解析与向量化在后台异步执行。"
+            + "前端可多次提交同名 file 字段实现批量上传，单文件场景行为不变。"
     )
     @PostMapping(value = "/upload", consumes = "multipart/form-data")
-    public ApiResponse<JobAck> upload(
-            @RequestParam("file") MultipartFile file,
-            @Parameter(description = "政策标题") @RequestParam("title") String title,
+    public ApiResponse<List<JobAck>> upload(
+            @RequestParam("file") MultipartFile[] files,
+            @Parameter(description = "政策标题（对所有文件生效）") @RequestParam("title") String title,
             @Parameter(description = "公告编号") @RequestParam(value = "documentNumber", required = false) String documentNumber,
             @Parameter(description = "发布时间 yyyy-MM-dd") @RequestParam(value = "publishDate", required = false) String publishDate,
             @Parameter(description = "生效时间 yyyy-MM-dd") @RequestParam(value = "effectiveDate", required = false) String effectiveDate,
@@ -49,33 +55,50 @@ public class DocumentController {
             @Parameter(description = "适用业务标签，多个用逗号分隔") @RequestParam(value = "applicableBusiness", required = false) String applicableBusiness,
             @Parameter(description = "政策摘要") @RequestParam(value = "summary", required = false) String summary) {
 
-        try {
-            DocumentUploadRequest request = new DocumentUploadRequest();
-            request.setTitle(title);
-            request.setDocumentNumber(documentNumber);
-            request.setStatus(status);
-            request.setApplicableBusiness(applicableBusiness);
-            request.setSummary(summary);
-
-            if (publishDate != null && !publishDate.isEmpty()) {
-                request.setPublishDate(java.time.LocalDate.parse(publishDate));
-            }
-            if (effectiveDate != null && !effectiveDate.isEmpty()) {
-                request.setEffectiveDate(java.time.LocalDate.parse(effectiveDate));
-            }
-            if (expireDate != null && !expireDate.isEmpty()) {
-                request.setExpireDate(java.time.LocalDate.parse(expireDate));
-            }
-
-            JobAck ack = documentService.stageUpload(file, request);
-            // 触发异步处理；status=DUPLICATE 不重复处理
-            if (ack.getJobId() != null) {
-                ingestionService.processNow(ack.getJobId());
-            }
-            return ApiResponse.success("文档接收成功", ack);
-        } catch (Exception e) {
-            return ApiResponse.error(e.getMessage());
+        if (files == null || files.length == 0) {
+            return ApiResponse.error("未接收到文件，请通过 file 字段上传一个或多个 PDF");
         }
+
+        // 元数据共享一份（stageUpload 只读不写）
+        DocumentUploadRequest request = new DocumentUploadRequest();
+        request.setTitle(title);
+        request.setDocumentNumber(documentNumber);
+        request.setStatus(status);
+        request.setApplicableBusiness(applicableBusiness);
+        request.setSummary(summary);
+        if (publishDate != null && !publishDate.isEmpty()) {
+            request.setPublishDate(java.time.LocalDate.parse(publishDate));
+        }
+        if (effectiveDate != null && !effectiveDate.isEmpty()) {
+            request.setEffectiveDate(java.time.LocalDate.parse(effectiveDate));
+        }
+        if (expireDate != null && !expireDate.isEmpty()) {
+            request.setExpireDate(java.time.LocalDate.parse(expireDate));
+        }
+
+        List<JobAck> acks = new ArrayList<>(files.length);
+        for (MultipartFile file : files) {
+            if (file == null || file.isEmpty()) {
+                acks.add(new JobAck(null, null, "REJECTED",
+                        file == null ? "空文件" : file.getOriginalFilename() + " 为空"));
+                continue;
+            }
+            try {
+                JobAck ack = documentService.stageUpload(file, request);
+                // 触发异步处理；status=DUPLICATE 不重复处理
+                if (ack.getJobId() != null) {
+                    ingestionService.processNow(ack.getJobId());
+                }
+                acks.add(ack);
+            } catch (Exception e) {
+                // 单文件失败不阻断整批；返回一条 REJECTED 让前端展示
+                log.error("UPLOAD batch item failed file={} err={}",
+                        file.getOriginalFilename(), e.getMessage(), e);
+                acks.add(new JobAck(null, null, "REJECTED",
+                        file.getOriginalFilename() + ": " + e.getMessage()));
+            }
+        }
+        return ApiResponse.success("已接收 " + acks.size() + " 个文件", acks);
     }
 
     @Operation(summary = "获取文档列表", description = "分页查询政策文档，支持按状态和业务标签筛选")

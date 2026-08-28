@@ -20,12 +20,16 @@ public final class TextNormalizer {
 
     /** 单独成行的页码（含 -12- / 12 / — 12 — 形式），多行模式。 */
     private static final Pattern PAGE_NUMBER_LINE = Pattern.compile("(?m)^\\s*[-—]?\\s*\\d+\\s*[-—]?\\s*$");
+
     /** 页脚 "第 X 页" / "第 X 页 共 Y 页"。 */
     private static final Pattern PAGE_FOOTER = Pattern.compile("第\\s*\\d+\\s*页\\s*(共\\s*\\d+\\s*页)?");
+
     /** 连续空格 / 制表符 → 单空格。 */
     private static final Pattern MULTI_SPACE = Pattern.compile("[ \\t]+");
+
     /** 连续 3+ 换行 → 双换行（段落分隔）。 */
     private static final Pattern MULTI_NEWLINE = Pattern.compile("\\n{3,}");
+
     /** 条款锚："第 X 条 / 第 X 章 / 第 X 节"，前一个字符不能是中文（避免误命中"第二章第三节"中的"第三节"）。 */
     private static final Pattern CLAUSE_ANCHOR = Pattern.compile(
             "(?m)(?<![\\u4e00-\\u9fa5])(第[一二三四五六七八九十百千0-9]+[条章节])");

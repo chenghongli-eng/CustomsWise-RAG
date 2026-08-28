@@ -177,9 +177,29 @@ public class MilvusService {
     }
 
     /**
-     * 搜索向量
+     * 搜索向量（不过滤，保留向后兼容）。
      */
     public List<Map<String, Object>> searchVectors(float[] queryVector, int topK) {
+        return searchVectors(queryVector, topK, null);
+    }
+
+    /**
+     * 搜索向量，支持服务端 expr 过滤。
+     *
+     * <p>典型 expr 形式：
+     * <ul>
+     *   <li>{@code "status == \"现行\""} —— 只召回现行政策</li>
+     *   <li>{@code "document_id in [\"1\",\"2\"]"} —— 指定文档集合</li>
+     * </ul>
+     *
+     * <p>expr 为 null 或空白则不过滤。
+     *
+     * @param queryVector 查询向量（与 Milvus 集合同维度 1536）
+     * @param topK 最大返回条数
+     * @param expr Milvus 过滤表达式；null/空表示不过滤
+     * @return 按 score 升序排列的命中列表（L2 距离；相似度由调用方按 1/(1+l2) 换算）
+     */
+    public List<Map<String, Object>> searchVectors(float[] queryVector, int topK, String expr) {
         List<Map<String, Object>> results = new ArrayList<>();
         try {
             ensureCollectionExists();
@@ -189,13 +209,16 @@ public class MilvusService {
                 vectorList.add(v);
             }
 
-            SearchParam param = SearchParam.newBuilder()
+            SearchParam.Builder builder = SearchParam.newBuilder()
                     .withCollectionName(collectionName)
                     .withVectorFieldName("vector")
                     .withTopK(topK)
                     .withFloatVectors(Collections.singletonList(vectorList))
-                    .withOutFields(Arrays.asList("text", "document_id", "status"))
-                    .build();
+                    .withOutFields(Arrays.asList("text", "document_id", "status"));
+            if (expr != null && !expr.isBlank()) {
+                builder.withExpr(expr);
+            }
+            SearchParam param = builder.build();
 
             var resp = milvusClient.search(param);
             if (resp.getStatus() != R.Status.Success.getCode()) {

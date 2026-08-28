@@ -28,9 +28,6 @@ import java.util.Map;
  * 启动对账服务：比对 PG 的 {@link com.customswise.rag.entity.DocumentChunk} 与
  * Milvus 的向量数，缺失时从 file_path 重新解析 + 切片 + 向量化补齐。
  *
- * <p>触发时机：实现 {@link ApplicationRunner}，Spring Boot 启动完成后执行。
- * {@link Order} 设为 10，晚于 {@link MilvusService#init()} 完成。
- *
  * <p>设计要点：
  * <ul>
  *   <li>仅在 Milvus 实际向量数 &lt; PG chunk 数时触发修复（避免误删）</li>
@@ -50,18 +47,25 @@ public class MigrationService implements ApplicationRunner {
 
     /** 政策文档仓储（遍历所有未删除文档）。 */
     private final PolicyDocumentRepository documentRepository;
+
     /** chunk 仓储（用于 countByDocumentId 与 deleteByDocumentId）。 */
     private final DocumentChunkRepository chunkRepository;
+
     /** schema 版本表，幂等控制用。 */
     private final SchemaVersionRepository schemaVersionRepository;
+
     /** Milvus v2 补充封装（countByFilter / deleteByDocumentId）。 */
     private final MilvusServiceV2 milvusV2;
+
     /** Milvus v1 主服务（insertVector）。 */
     private final MilvusService milvusService;
+
     /** MiniMax Embedding 服务。 */
     private final MiniMaxService miniMaxService;
+
     /** PDF 文本提取（PDFBox → OCR 兜底）。 */
     private final TextExtractorService textExtractorService;
+
     /** Spring 事务管理器，用于包裹 JPA delete 衍生方法。 */
     private final PlatformTransactionManager txManager;
 
@@ -140,14 +144,6 @@ public class MigrationService implements ApplicationRunner {
 
     /**
      * 修复单个文档：清空旧向量与旧 chunk，按当前流水线重新生成。
-     *
-     * <p>步骤：
-     * <ol>
-     *   <li>删除 Milvus 中该 document_id 的所有向量</li>
-     *   <li>在事务内删除 PG 中该 document_id 的所有 DocumentChunk（避免主键冲突）</li>
-     *   <li>从 file_path 重新解析 + 规范化 + 切片</li>
-     *   <li>对每个 chunk：embed → insertVector → save DocumentChunk</li>
-     * </ol>
      *
      * <p>任一 chunk 失败仅记录日志、不中断后续 chunk；整体异常返回 0。
      *

@@ -43,14 +43,19 @@ public class IngestionService {
 
     /** PolicyDocument 仓储。 */
     private final PolicyDocumentRepository documentRepository;
+
     /** DocumentChunk 仓储。 */
     private final DocumentChunkRepository chunkRepository;
+
     /** DocumentIngestJob 仓储（job 状态/重试元数据）。 */
     private final DocumentIngestJobRepository jobRepository;
+
     /** PDF 文本提取（PDFBox → OCR）。 */
     private final TextExtractorService textExtractorService;
+
     /** MiniMax Embedding（生成 1536 维向量）。 */
     private final MiniMaxService miniMaxService;
+
     /** Milvus v1 主服务（insertVector / search）。 */
     private final MilvusService milvusService;
 
