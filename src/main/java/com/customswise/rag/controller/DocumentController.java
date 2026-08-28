@@ -2,9 +2,11 @@ package com.customswise.rag.controller;
 
 import com.customswise.rag.dto.ApiResponse;
 import com.customswise.rag.dto.DocumentUploadRequest;
+import com.customswise.rag.dto.JobAck;
 import com.customswise.rag.entity.PolicyDocument;
 import com.customswise.rag.repository.PolicyDocumentRepository;
 import com.customswise.rag.service.DocumentService;
+import com.customswise.rag.service.IngestionService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.media.Schema;
@@ -21,19 +23,22 @@ public class DocumentController {
 
     private final DocumentService documentService;
     private final PolicyDocumentRepository documentRepository;
+    private final IngestionService ingestionService;
 
     public DocumentController(DocumentService documentService,
-                             PolicyDocumentRepository documentRepository) {
+                             PolicyDocumentRepository documentRepository,
+                             IngestionService ingestionService) {
         this.documentService = documentService;
         this.documentRepository = documentRepository;
+        this.ingestionService = ingestionService;
     }
 
     @Operation(
-        summary = "上传政策文档",
-        description = "上传PDF格式的政策文档并自动解析、向量化"
+        summary = "上传政策文档（异步）",
+        description = "上传PDF格式的政策文档，立即返回 JobAck；解析与向量化在后台异步执行"
     )
     @PostMapping(value = "/upload", consumes = "multipart/form-data")
-    public ApiResponse<PolicyDocument> upload(
+    public ApiResponse<JobAck> upload(
             @RequestParam("file") MultipartFile file,
             @Parameter(description = "政策标题") @RequestParam("title") String title,
             @Parameter(description = "公告编号") @RequestParam(value = "documentNumber", required = false) String documentNumber,
@@ -62,41 +67,15 @@ public class DocumentController {
                 request.setExpireDate(java.time.LocalDate.parse(expireDate));
             }
 
-            PolicyDocument document = documentService.uploadDocument(file, request);
-            return ApiResponse.success("文档上传成功", document);
+            JobAck ack = documentService.stageUpload(file, request);
+            // 触发异步处理；status=DUPLICATE 不重复处理
+            if (ack.getJobId() != null) {
+                ingestionService.processNow(ack.getJobId());
+            }
+            return ApiResponse.success("文档接收成功", ack);
         } catch (Exception e) {
             return ApiResponse.error(e.getMessage());
         }
-    }
-
-    @Schema(name = "DocumentUploadForm", description = "文档上传表单")
-    public static class DocumentUploadForm {
-        @Schema(description = "政策文档文件(PDF)", type = "string", format = "binary")
-        public MultipartFile file;
-
-        @Schema(description = "政策标题")
-        public String title;
-
-        @Schema(description = "公告编号")
-        public String documentNumber;
-
-        @Schema(description = "发布时间 yyyy-MM-dd")
-        public String publishDate;
-
-        @Schema(description = "生效时间 yyyy-MM-dd")
-        public String effectiveDate;
-
-        @Schema(description = "失效时间 yyyy-MM-dd")
-        public String expireDate;
-
-        @Schema(description = "状态：现行/已废止", example = "现行")
-        public String status = "现行";
-
-        @Schema(description = "适用业务标签，多个用逗号分隔")
-        public String applicableBusiness;
-
-        @Schema(description = "政策摘要")
-        public String summary;
     }
 
     @Operation(summary = "获取文档列表", description = "分页查询政策文档，支持按状态和业务标签筛选")

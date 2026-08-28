@@ -74,6 +74,13 @@
             <version>3.0.1</version>
         </dependency>
 
+        <!-- OCR兜底 - tess4j (依赖系统安装 tesseract-ocr + chi_sim traineddata) -->
+        <dependency>
+            <groupId>net.sourceforge.tess4j</groupId>
+            <artifactId>tess4j</artifactId>
+            <version>5.11.0</version>
+        </dependency>
+
         <!-- Thymeleaf模板引擎 (简单前端) -->
         <dependency>
             <groupId>org.springframework.boot</groupId>

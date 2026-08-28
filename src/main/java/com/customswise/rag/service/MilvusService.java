@@ -33,12 +33,11 @@ public class MilvusService {
             milvusClient.describeCollection(DescribeCollectionParam.newBuilder()
                     .withCollectionName(collectionName)
                     .build());
-            // 校验 schema 完整性，缺 status 字段则视为旧版本，重建
+            // 已存在：保留数据，不再 drop+recreate
+            // 任何字段缺失/不兼容由 MigrationService 从 file_path 重建向量修复
             if (!hasStatusField()) {
-                log.warn("Collection {} 缺少 status 字段，按旧 schema 处理: 将重建", collectionName);
-                milvusClient.dropCollection(DropCollectionParam.newBuilder()
-                        .withCollectionName(collectionName).build());
-                createCollection();
+                log.warn("Collection {} 缺 status 字段，将保留旧 schema；status 过滤相关查询可能不准。"
+                        + "向量补齐由 MigrationService 启动对账执行", collectionName);
             } else {
                 log.info("Collection已存在: {}（schema 完整，保留数据）", collectionName);
             }

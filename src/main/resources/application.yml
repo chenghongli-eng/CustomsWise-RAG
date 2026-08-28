@@ -54,6 +54,26 @@ milvus:
   port: 19530
   collection-name: customswise_docs
 
+# 迁移/对账配置
+migration:
+  enabled: true
+  dry-run: false
+
+# OCR (tess4j) 配置
+tesseract:
+  enabled: true
+  data-path: /usr/share/tesseract-ocr/4.00/tessdata
+  language: chi_sim+eng
+  ocr-dpi: 200
+  timeout-seconds: 30
+
+# 异步摄取配置
+ingest:
+  executor:
+    core-pool: 4
+    max-pool: 16
+    queue-capacity: 200
+
 # 文件存储配置
 storage:
   upload-dir: ./uploads

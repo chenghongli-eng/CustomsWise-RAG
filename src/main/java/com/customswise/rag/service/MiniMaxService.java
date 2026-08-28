@@ -103,10 +103,11 @@ public class MiniMaxService {
                 var response = client.execute(post);
                 int statusCode = response.getStatusLine().getStatusCode();
                 String jsonResponse = EntityUtils.toString(response.getEntity());
-                log.info("MiniMax Embedding response status: {}, body: {}", statusCode, jsonResponse);
+                // 完整 body 在 debug；生产环境避免 1536 维向量污染日志
+                log.debug("MiniMax Embedding response: {}", jsonResponse);
 
                 if (statusCode != 200) {
-                    log.error("MiniMax Embedding API error, status: {}, response: {}", statusCode, jsonResponse);
+                    log.error("MiniMax Embedding API error, status: {}, body: {}", statusCode, jsonResponse);
                     return generateFallbackVector(text);
                 }
 
