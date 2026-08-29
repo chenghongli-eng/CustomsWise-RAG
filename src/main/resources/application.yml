@@ -106,3 +106,11 @@ rag:
     max-chunks-per-document: 2
     # Milvus 服务端 expr 过滤（粗召回阶段直接限定 status）
     server-side-status-filter: true
+    # 自适应 dedup：召回量少时 per-doc=3，多时=2，给长文档留更多片段
+    dedup-adaptive: true
+
+# Caffeine 本地缓存（QA 问答结果缓存）
+cache:
+  type: caffeine
+  caffeine:
+    spec: maximumSize=500,expireAfterWrite=5m

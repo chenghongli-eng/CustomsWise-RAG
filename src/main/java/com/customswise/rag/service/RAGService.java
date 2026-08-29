@@ -11,9 +11,10 @@ import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.cache.annotation.Cacheable;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
-import org.springframework.stereotype.Service;
+import org.springframework.data.domain.Sort;
 
 import java.time.LocalDateTime;
 import java.util.*;
@@ -51,6 +52,10 @@ public class RAGService {
 
     /** Milvus 服务端 expr 过滤（true 时只召回 status="现行"） */
     @Value("${rag.rerank.server-side-status-filter:true}")
+
+    /** 自适应 dedup：召回量少时 per-doc=3，多时=2 */
+    @Value("${rag.rerank.dedup-adaptive:true}")
+    private boolean dedupAdaptive;
     private boolean serverSideStatusFilter;
 
     public RAGService(MiniMaxService miniMaxService,
@@ -79,6 +84,7 @@ public class RAGService {
      *   <li>截 topK → context → LLM</li>
      * </ol>
      */
+    @Cacheable(value = "qa", key = "#request.question + '|' + (#request.userConditions ?: '')")
     public QaResponse ask(QaRequest request) {
         if (!milvusService.isAvailable()) {
             return QaResponse.error("向量数据库（Milvus）未连接，RAG 功能暂不可用，请联系管理员启动 Milvus 服务");
@@ -104,9 +110,10 @@ public class RAGService {
         }
         log.info("层1a 阈值过滤: {} -> {} 条 (threshold={})", raw.size(), items.size(), similarityThreshold);
 
-        // 4. 层 1b 同 docId 去重
-        items = dedupByDocumentId(items, maxChunksPerDocument);
-        log.info("层1b 同doc去重: per-doc 最多 {} 条, 剩余 {} 条", maxChunksPerDocument, items.size());
+        // 4. 层 1b 同 docId 去重（自适应配额）
+        int effectivePerDoc = (dedupAdaptive && items.size() < 20) ? 3 : maxChunksPerDocument;
+        items = dedupByDocumentId(items, effectivePerDoc);
+        log.info("层1b 同doc去重: per-doc={}（自适应={}）, 剩余 {} 条", effectivePerDoc, dedupAdaptive, items.size());
 
         // 短路：候选为空时直接返回，不再调用 LLM（避免空上下文浪费 token 拉低质量）
         if (items.isEmpty()) {
@@ -143,6 +150,9 @@ public class RAGService {
         StringBuilder context = new StringBuilder();
         List<QaResponse.Reference> references = new ArrayList<>();
 
+        // 记录本次引用了哪些文档（chat 失败时回滚计数）
+        List<PolicyDocument> referencedDocs = new ArrayList<>();
+
         for (Map<String, Object> result : topResults) {
             String text = (String) result.get("text");
             String docId = (String) result.get("document_id");
@@ -166,14 +176,16 @@ public class RAGService {
                     // 更新引用计数
                     doc.setReferenceCount(doc.getReferenceCount() + 1);
                     documentRepository.save(doc);
+                    referencedDocs.add(doc);
                 }
             } catch (NumberFormatException e) {
                 log.warn("Invalid document_id: {}", docId);
             }
         }
 
-        // 7. 组装Prompt
-        String prompt = buildPrompt(request.getQuestion(), request.getUserConditions(), context.toString());
+        // 7. 组装Prompt（含历史上下文）
+        String historyContext = buildHistoryContext(request.getSessionId());
+        String prompt = buildPrompt(request.getQuestion(), request.getUserConditions(), context.toString(), historyContext);
 
         // 8. 调用LLM
         String answer;
@@ -183,6 +195,12 @@ public class RAGService {
             // chat() 内部已打 [FALLBACK] chat_error=true 标记；这里只补一行汇总日志并返回业务文案
             log.error("[FALLBACK] chat_error=true reason={} question=\"{}\"",
                     e.getClass().getSimpleName(), request.getQuestion());
+            // 回滚已计数的引用（chat 失败时不应计入）
+            for (PolicyDocument doc : referencedDocs) {
+                doc.setReferenceCount(Math.max(0, doc.getReferenceCount() - 1));
+                documentRepository.save(doc);
+            }
+            referencedDocs.clear();
             answer = "调用 MiniMax API 业务异常（" + e.getClass().getSimpleName() + "），请稍后重试。";
         }
 
@@ -246,9 +264,13 @@ public class RAGService {
     /**
      * 构建Prompt
      */
-    private String buildPrompt(String question, String userConditions, String context) {
+    private String buildPrompt(String question, String userConditions, String context, String historyContext) {
         StringBuilder prompt = new StringBuilder();
         prompt.append("你是一个专业的跨境电商海关政策助手。请根据以下参考资料回答用户的问题。\n\n");
+
+        if (historyContext != null && !historyContext.isEmpty()) {
+            prompt.append("【对话历史】\n").append(historyContext).append("\n\n");
+        }
 
         if (userConditions != null && !userConditions.isEmpty()) {
             prompt.append("用户条件：").append(userConditions).append("\n\n");
@@ -268,6 +290,31 @@ public class RAGService {
         prompt.append("【回答】");
 
         return prompt.toString();
+    }
+
+    /**
+     * 从数据库拉取最近 N 轮对话历史，拼成一段文字供 LLM 理解上下文。
+     */
+    private String buildHistoryContext(String sessionId) {
+        if (sessionId == null || sessionId.isBlank()) {
+            return "";
+        }
+        try {
+            Page<QaHistory> page = qaHistoryRepository.findBySessionIdOrderByCreatedAtDesc(
+                    sessionId, PageRequest.of(0, 3, Sort.by(Sort.Direction.ASC, "createdAt")));
+            if (page.isEmpty()) {
+                return "";
+            }
+            StringBuilder sb = new StringBuilder();
+            for (QaHistory h : page.getContent()) {
+                sb.append("用户问：").append(h.getUserQuery()).append("\n");
+                sb.append("助手答：").append(h.getAiResponse()).append("\n\n");
+            }
+            return sb.toString();
+        } catch (Exception e) {
+            log.warn("[HISTORY] 拉取对话历史失败 sessionId={}: {}", sessionId, e.getMessage());
+            return "";
+        }
     }
 
     /**

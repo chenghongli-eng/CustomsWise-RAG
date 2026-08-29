@@ -119,10 +119,13 @@ public class RerankService {
      * @return RerankScore 列表；失败时返回 null
      */
     private List<RerankScore> callBgeRerank(String query, List<String> documents, int topN) throws IOException {
+        long startMs = System.currentTimeMillis();
         var requestBody = new java.util.HashMap<String, Object>();
         requestBody.put("model", "bge-reranker-v2-m3");
         requestBody.put("query", query);
         requestBody.put("documents", documents);
+
+        log.info("[BGE_RERANK] candidates={} topN={} query={}", documents.size(), topN, query);
 
         HttpPost post = new HttpPost(rerankUrl);
         post.setHeader("Content-Type", "application/json");
@@ -142,17 +145,25 @@ public class RerankService {
         JsonNode root = objectMapper.readTree(jsonResponse);
         JsonNode results = root.get("results");
         if (results == null || !results.isArray()) {
-            log.warn("[BGE_RERANK] 响应缺少 results 字段: {}", jsonResponse);
+            long elapsed = System.currentTimeMillis() - startMs;
+            log.warn("[BGE_RERANK] 响应缺少 results 字段: {} elapsedMs={}", jsonResponse, elapsed);
             return null;
         }
 
         List<RerankScore> scores = new ArrayList<>();
+        float minScore = Float.MAX_VALUE, maxScore = -Float.MAX_VALUE, sumScore = 0;
         for (JsonNode item : results) {
             int idx = item.get("index").asInt();
             double score = item.get("relevance_score").asDouble();
             scores.add(new RerankScore(idx, (float) score));
+            minScore = (float) Math.min(minScore, score);
+            maxScore = (float) Math.max(maxScore, score);
+            sumScore += (float) score;
         }
-        log.info("[BGE_RERANK] rerank 成功，candidates={} returned={}", documents.size(), scores.size());
+        long elapsed = System.currentTimeMillis() - startMs;
+        float avgScore = scores.isEmpty() ? 0 : sumScore / scores.size();
+        log.info("[BGE_RERANK] success candidates={} returned={} elapsedMs={} scoreRange=[{:.3f}, {:.3f}] avg={:.3f}",
+                documents.size(), scores.size(), elapsed, minScore, maxScore, avgScore);
         return scores;
     }
 }
