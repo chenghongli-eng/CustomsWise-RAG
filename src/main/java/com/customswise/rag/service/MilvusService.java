@@ -8,6 +8,7 @@ import io.milvus.param.dml.*;
 import io.milvus.param.index.CreateIndexParam;
 import io.milvus.response.SearchResultsWrapper;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
@@ -23,12 +24,23 @@ public class MilvusService {
     @Value("${milvus.collection-name}")
     private String collectionName;
 
-    public MilvusService(MilvusClient milvusClient) {
+    /** Milvus 是否可用 */
+    private volatile boolean available = false;
+
+    public MilvusService(@Autowired(required = false) MilvusClient milvusClient) {
         this.milvusClient = milvusClient;
+    }
+
+    public boolean isAvailable() {
+        return available;
     }
 
     @PostConstruct
     public void init() {
+        if (milvusClient == null) {
+            log.warn("⚠️ Milvus 不可用（连接失败），项目将以降级模式运行（仅 PG 功能可用，RAG 功能暂停）");
+            return;
+        }
         try {
             milvusClient.describeCollection(DescribeCollectionParam.newBuilder()
                     .withCollectionName(collectionName)
@@ -41,6 +53,7 @@ public class MilvusService {
             } else {
                 log.info("Collection已存在: {}（schema 完整，保留数据）", collectionName);
             }
+            available = true;
         } catch (Exception e) {
             log.info("Collection不存在，开始创建: {}", collectionName);
             createCollection();
@@ -146,6 +159,10 @@ public class MilvusService {
      * 插入向量
      */
     public String insertVector(String text, float[] vector, Map<String, String> metadata) {
+        if (!isAvailable()) {
+            log.warn("Milvus 不可用，跳过向量插入，document_id={}", metadata.getOrDefault("document_id", ""));
+            return null;
+        }
         try {
             ensureCollectionExists();
 
@@ -200,6 +217,9 @@ public class MilvusService {
      * @return 按 score 升序排列的命中列表（L2 距离；相似度由调用方按 1/(1+l2) 换算）
      */
     public List<Map<String, Object>> searchVectors(float[] queryVector, int topK, String expr) {
+        if (!isAvailable()) {
+            return Collections.emptyList();
+        }
         List<Map<String, Object>> results = new ArrayList<>();
         try {
             ensureCollectionExists();
@@ -265,6 +285,10 @@ public class MilvusService {
      * 删除文档的所有向量
      */
     public void deleteByDocumentId(String documentId) {
+        if (!isAvailable()) {
+            log.warn("Milvus 不可用，跳过向量删除，document_id={}", documentId);
+            return;
+        }
         try {
             DeleteParam param = DeleteParam.newBuilder()
                     .withCollectionName(collectionName)

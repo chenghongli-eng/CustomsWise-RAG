@@ -89,6 +89,10 @@ public class MigrationService implements ApplicationRunner {
             log.info("[MIGRATION] disabled, skip");
             return;
         }
+        if (!milvusService.isAvailable()) {
+            log.info("[MIGRATION] Milvus 不可用，跳过对账流程");
+            return;
+        }
         if (tx == null) {
             tx = new TransactionTemplate(txManager);
         }

@@ -80,6 +80,10 @@ public class RAGService {
      * </ol>
      */
     public QaResponse ask(QaRequest request) {
+        if (!milvusService.isAvailable()) {
+            return QaResponse.error("向量数据库（Milvus）未连接，RAG 功能暂不可用，请联系管理员启动 Milvus 服务");
+        }
+
         // 1. 生成问题向量
         float[] queryVector = miniMaxService.embed(request.getQuestion());
         log.info("问题: {}", request.getQuestion());
