@@ -94,14 +94,15 @@ rag:
   current-policy-boost: 2.0       #现行政策加权
   expired-policy-penalty: 0.3     #废止的片段分数
   rerank:
-    # 三层重排总开关：false 时直接走 status 规则加权（不调用 MiniMax rerank API）
-    # 当前 MiniMax 公开 API 未提供 rerank 端点，临时关闭；待官方开放或切换厂商后改回 true
-    enabled: false
+    # 三层重排总开关：false 时直接走 status 规则加权（不调用 rerank API）
+    enabled: true
+    # BGE rerank 服务地址（本地部署 bge-rerank-v2-m3）
+    url: http://127.0.0.1:8001/v1/rerank
+    # rerank 服务超时（毫秒）
+    timeout-ms: 5000
     # 相似度阈值：低于此值的 chunk 直接丢弃（避免送入 LLM 拉低质量）
     similarity-threshold: 0.32
     # 同 docId 最多保留的 chunk 数（解决滑窗重复）
     max-chunks-per-document: 2
     # Milvus 服务端 expr 过滤（粗召回阶段直接限定 status）
     server-side-status-filter: true
-    # MiniMax rerank API 超时（毫秒）
-    timeout-ms: 3000
