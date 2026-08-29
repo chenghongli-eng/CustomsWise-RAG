@@ -15,6 +15,7 @@ import org.springframework.cache.annotation.Cacheable;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Sort;
+import org.springframework.stereotype.Service;
 
 import java.time.LocalDateTime;
 import java.util.*;
@@ -52,11 +53,11 @@ public class RAGService {
 
     /** Milvus 服务端 expr 过滤（true 时只召回 status="现行"） */
     @Value("${rag.rerank.server-side-status-filter:true}")
+    private boolean serverSideStatusFilter;
 
     /** 自适应 dedup：召回量少时 per-doc=3，多时=2 */
     @Value("${rag.rerank.dedup-adaptive:true}")
     private boolean dedupAdaptive;
-    private boolean serverSideStatusFilter;
 
     public RAGService(MiniMaxService miniMaxService,
                      MilvusService milvusService,
