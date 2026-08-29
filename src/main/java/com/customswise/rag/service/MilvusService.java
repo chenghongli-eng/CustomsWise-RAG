@@ -194,13 +194,6 @@ public class MilvusService {
     }
 
     /**
-     * 搜索向量（不过滤，保留向后兼容）。
-     */
-    public List<Map<String, Object>> searchVectors(float[] queryVector, int topK) {
-        return searchVectors(queryVector, topK, null);
-    }
-
-    /**
      * 搜索向量，支持服务端 expr 过滤。
      *
      * <p>典型 expr 形式：

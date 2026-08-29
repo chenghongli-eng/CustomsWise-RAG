@@ -25,7 +25,7 @@ public class MilvusConfig {
         ConnectParam connectParam = ConnectParam.newBuilder()
                 .withHost(host)
                 .withPort(port)
-                .withConnectTimeout(5, TimeUnit.SECONDS)   // 连接超时 2 秒，快速失败
+                .withConnectTimeout(5, TimeUnit.SECONDS)   // 连接超时 5 秒，快速失败
                 .build();
         try {
             return new MilvusServiceClient(connectParam);
