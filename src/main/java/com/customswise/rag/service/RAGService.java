@@ -30,6 +30,8 @@ public class RAGService {
     private final PolicyDocumentRepository documentRepository;
     private final QaHistoryRepository qaHistoryRepository;
     private final ObjectMapper objectMapper;
+    private final AnswerCredibilityService credibilityService;
+    private final ExperimentService experimentService;
 
     @Value("${rag.top-k}")
     private int topK;
@@ -63,13 +65,17 @@ public class RAGService {
                      MilvusService milvusService,
                      RerankService rerankService,
                      PolicyDocumentRepository documentRepository,
-                     QaHistoryRepository qaHistoryRepository) {
+                     QaHistoryRepository qaHistoryRepository,
+                     AnswerCredibilityService credibilityService,
+                     ExperimentService experimentService) {
         this.miniMaxService = miniMaxService;
         this.milvusService = milvusService;
         this.rerankService = rerankService;
         this.documentRepository = documentRepository;
         this.qaHistoryRepository = qaHistoryRepository;
         this.objectMapper = new ObjectMapper();
+        this.credibilityService = credibilityService;
+        this.experimentService = experimentService;
     }
 
     /**
@@ -121,10 +127,14 @@ public class RAGService {
             log.info("[FALLBACK] short_circuit=true reason=no_candidates_after_filter threshold={} question=\"{}\"",
                     similarityThreshold, request.getQuestion());
             String answer = "未检索到相关政策资料。请换个关键词或上传相关政策文档。";
-            saveHistory(request, answer, List.of());
+            String experimentId = experimentService.getGroup(request.getSessionId(), "default");
+            saveHistory(request, answer, List.of(), null, experimentId);
             QaResponse response = new QaResponse();
             response.setAnswer(answer);
             response.setReferences(List.of());
+            response.setConfidenceScore(0f);
+            response.setConfidenceLevel("low");
+            response.setCitationsPresent(false);
             return response;
         }
 
@@ -133,6 +143,9 @@ public class RAGService {
 
         // 6. 层 3 MiniMax rerank（失败自动降级到层 1c）
         items = rerankService.rerank(request.getQuestion(), items, RagItem::text);
+
+        // 记录 rerank 后 top1 相似度（用于可信度评估）
+        float topSimilarity = items.isEmpty() ? 0f : items.get(0).similarity();
 
         // 7. 截 topK，转回 Map 喂给既有 context 构建
         List<Map<String, Object>> topResults = new ArrayList<>();
@@ -190,6 +203,8 @@ public class RAGService {
 
         // 8. 调用LLM
         String answer;
+        AnswerCredibilityService.CredibilityResult credibility = null;
+        String experimentId = experimentService.getGroup(request.getSessionId(), "default");
         try {
             answer = miniMaxService.chat(prompt);
         } catch (MiniMaxException e) {
@@ -205,13 +220,20 @@ public class RAGService {
             answer = "调用 MiniMax API 业务异常（" + e.getClass().getSimpleName() + "），请稍后重试。";
         }
 
-        // 9. 保存问答历史
-        saveHistory(request, answer, references);
+        // 9. 可信度评估 + 追加免责声明
+        credibility = credibilityService.evaluate(topSimilarity, references, answer);
+        answer += credibilityService.disclaimer(credibility.level());
 
-        // 10. 返回结果
+        // 10. 保存问答历史
+        saveHistory(request, answer, references, credibility, experimentId);
+
+        // 11. 返回结果
         QaResponse response = new QaResponse();
         response.setAnswer(answer);
         response.setReferences(references);
+        response.setConfidenceScore(credibility.score());
+        response.setConfidenceLevel(credibility.level());
+        response.setCitationsPresent(credibility.citationsPresent());
 
         return response;
     }
@@ -321,7 +343,8 @@ public class RAGService {
     /**
      * 保存问答历史
      */
-    private void saveHistory(QaRequest request, String answer, List<QaResponse.Reference> references) {
+    private void saveHistory(QaRequest request, String answer, List<QaResponse.Reference> references,
+                             AnswerCredibilityService.CredibilityResult credibility, String experimentId) {
         try {
             QaHistory history = new QaHistory();
             history.setSessionId(request.getSessionId() != null ? request.getSessionId() : UUID.randomUUID().toString());
@@ -330,6 +353,12 @@ public class RAGService {
             history.setAiResponse(answer);
             history.setReferences(references);
             history.setCreatedAt(LocalDateTime.now());
+            if (credibility != null) {
+                history.setConfidenceScore(credibility.score());
+                history.setConfidenceLevel(credibility.level());
+                history.setCitationsPresent(credibility.citationsPresent());
+            }
+            history.setExperimentId(experimentId);
             qaHistoryRepository.save(history);
         } catch (Exception e) {
             log.error("Failed to save QA history", e);

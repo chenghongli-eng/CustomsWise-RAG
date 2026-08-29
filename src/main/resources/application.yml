@@ -75,6 +75,14 @@ tesseract:
   ocr-dpi: 200
   timeout-seconds: 30
 
+# PaddleOCR HTTP 服务（优先级 15，介于 PDFBox 和 tess4j 之间）
+paddleocr:
+  enabled: true
+  url: http://127.0.0.1:8002/ocr
+  timeout-ms: 10000
+  dpi: 250
+  connect-timeout-ms: 3000
+
 # 异步摄取配置
 ingest:
   executor:
@@ -114,3 +122,13 @@ cache:
   type: caffeine
   caffeine:
     spec: maximumSize=500,expireAfterWrite=5m
+
+# 答案可信度评估（防 LLM 幻觉）
+credibility:
+  top-similarity-weight: 0.7   # top chunk 相似度在置信度评分中的权重
+  citation-weight: 0.3         # 文档编号引用在置信度评分中的权重
+  low-confidence-threshold: 0.4  # 低于此分 → confidenceLevel="low"
+
+# A/B 测试框架
+experiments:
+  enabled: false               # 默认关闭，需要时开启

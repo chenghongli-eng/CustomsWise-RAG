@@ -36,6 +36,22 @@ public class QaHistory {
     @Transient
     private List<Object> references;
 
+    /** 答案可信度评分（0.0~1.0），由 AnswerCredibilityService 计算后写入。 */
+    @Column(name = "confidence_score")
+    private Float confidenceScore;
+
+    /** 可信度等级：high / medium / low。 */
+    @Column(name = "confidence_level", length = 20)
+    private String confidenceLevel;
+
+    /** LLM 是否在答案中实际引用了文档编号。 */
+    @Column(name = "citations_present")
+    private Boolean citationsPresent;
+
+    /** 所属实验分组（A/B 测试用）。 */
+    @Column(name = "experiment_id", length = 50)
+    private String experimentId;
+
     @Column(name = "created_at")
     private LocalDateTime createdAt = LocalDateTime.now();
 
