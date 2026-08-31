@@ -154,10 +154,8 @@ public class PaddleOcrExtractor implements PdfExtractor {
                     .build();
             post.setConfig(config);
 
-            String jsonResponse = httpClient.execute(post, response -> {
-                EntityUtils.consume(response.getEntity());
-                return EntityUtils.toString(response.getEntity(), StandardCharsets.UTF_8);
-            });
+            String jsonResponse = httpClient.execute(post, response ->
+                EntityUtils.toString(response.getEntity(), StandardCharsets.UTF_8));
 
             JsonNode root = objectMapper.readTree(jsonResponse);
             String text = root.path("text").asText("");
