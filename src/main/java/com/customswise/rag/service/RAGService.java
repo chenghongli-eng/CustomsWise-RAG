@@ -107,10 +107,10 @@ public class RAGService {
         log.info("问题: {}", request.getQuestion());
         log.info("问题向量维度: {}", queryVector.length);
 
-        // 2. 搜索（层 1：服务端可选 status 过滤）
+        // 2. 搜索（层 1：hybrid dense + BM25 sparse，服务端可选 status 过滤）
         String expr = serverSideStatusFilter ? "status == \"现行\"" : null;
-        List<Map<String, Object>> raw = milvusService.searchVectors(queryVector, topK * 2, expr);
-        log.info("检索到 {} 条结果 (expr={})", raw.size(), expr == null ? "无" : expr);
+        List<Map<String, Object>> raw = milvusService.hybridSearch(queryVector, request.getQuestion(), topK * 2, expr);
+        log.info("检索到 {} 条结果 (expr={}, hybrid=dense+sparse)", raw.size(), expr == null ? "无" : expr);
 
         // 3. 转 RagItem + 阈值过滤
         List<RagItem> items = new ArrayList<>(raw.size());

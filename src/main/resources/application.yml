@@ -66,6 +66,11 @@ milvus:
 migration:
   enabled: true
   dry-run: false
+  # schema drift 时是否自动 drop+recreate collection + 走 MigrationService 重灌。
+  # 默认 false（保护存量数据）。Milvus 2.5 SDK 不支持给已存在的 collection 在线加 Function，
+  # 所以从 v1 schema 升到含 BM25 Function 的新 schema 需要 drop 整库。
+  # 一次性升级流程：开 true → 启动 → 等 MigrationService 重灌完毕 → 关回 false
+  auto-recreate-collection: false
 
 # OCR (tess4j) 配置
 tesseract:

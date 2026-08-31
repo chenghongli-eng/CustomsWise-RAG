@@ -54,10 +54,7 @@ public class MigrationService implements ApplicationRunner {
     /** schema 版本表，幂等控制用。 */
     private final SchemaVersionRepository schemaVersionRepository;
 
-    /** Milvus v2 补充封装（countByFilter / deleteByDocumentId）。 */
-    private final MilvusServiceV2 milvusV2;
-
-    /** Milvus v1 主服务（insertVector）。 */
+    /** Milvus 服务（insertVector / countByFilter / deleteByDocumentId）。 */
     private final MilvusService milvusService;
 
     /** MiniMax Embedding 服务。 */
@@ -111,7 +108,7 @@ public class MigrationService implements ApplicationRunner {
             total++;
 
             long pgCount = chunkRepository.countByDocumentId(doc.getId());
-            long mvCount = milvusV2.countByFilter("document_id == \"" + doc.getId() + "\"");
+            long mvCount = milvusService.countByFilter("document_id == \"" + doc.getId() + "\"");
 
             if (mvCount < 0) {
                 // Milvus 不可用（countByFilter 内部异常返回 -1）→ 跳过避免反复失败
@@ -157,7 +154,7 @@ public class MigrationService implements ApplicationRunner {
     private int repairDocument(PolicyDocument doc) {
         try {
             // 1. 清理：Milvus 中该 doc 的所有向量
-            milvusV2.deleteByDocumentId(String.valueOf(doc.getId()));
+            milvusService.deleteByDocumentId(String.valueOf(doc.getId()));
 
             // 2. 清理：PG 中该 doc 的所有 chunk（避免重复主键）
             //    Spring Data JPA 的 void 衍生 delete 方法需要在事务内调用
