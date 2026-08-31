@@ -106,8 +106,15 @@ rag:
     enabled: true
     # BGE rerank 服务地址（本地部署 bge-rerank-v2-m3）
     url: http://127.0.0.1:8001/v1/rerank
-    # rerank 服务超时（毫秒）
-    timeout-ms: 5000
+    # 连接超时（毫秒）—— 本地服务默认3s
+    connect-timeout-ms: 3000
+    # 读取超时（毫秒）—— bge-reranker-v2-m3 推理 10 条长中文文档通常 5~15s，留到30s；超时走降级
+    timeout-ms: 30000
+    # 单条 chunk 截断字符数。bge-reranker 是 cross-encoder，attention O(n²)，
+    # 生产 chunk 平均 ~300字 ×10 对 ≈30s 推理；200字 ×6 对 ≈7s 够用
+    max-chars-per-doc: 500
+    # 送 rerank 前的候选上限（在 RAGService 状态加权排序后截）。6+ ×500字 已逼近30s超时，砍到4留余量
+    candidate-cap: 4
     # 相似度阈值：低于此值的 chunk 直接丢弃（避免送入 LLM 拉低质量）
     similarity-threshold: 0.32
     # 同 docId 最多保留的 chunk 数（解决滑窗重复）
@@ -119,7 +126,6 @@ rag:
 
 # Caffeine 本地缓存（QA 问答结果缓存）
 cache:
-  type: caffeine
   caffeine:
     spec: maximumSize=500,expireAfterWrite=5m
 

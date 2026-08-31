@@ -57,6 +57,11 @@ public class RAGService {
     @Value("${rag.rerank.server-side-status-filter:true}")
     private boolean serverSideStatusFilter;
 
+    /** 送 rerank 前的候选上限（状态加权排序后截）。bge-reranker 是 O(n²)，
+     * 太多候选会超时；上限给 rerankTopK×2 留余量。 */
+    @Value("${rag.rerank.candidate-cap:10}")
+    private int rerankCandidateCap;
+
     /** 自适应 dedup：召回量少时 per-doc=3，多时=2 */
     @Value("${rag.rerank.dedup-adaptive:true}")
     private boolean dedupAdaptive;
@@ -140,6 +145,11 @@ public class RAGService {
 
         // 5. 层 1c 状态加权排序（降级路径也是这个顺序）
         items = statusWeightedSort(items);
+
+        // 5b. 候选上限：bge-reranker 是 cross-encoder O(n²)，太多候选推理爆 30s；按状态加权序截一刀
+        if (items.size() > rerankCandidateCap) {
+            items = new ArrayList<>(items.subList(0, rerankCandidateCap));
+        }
 
         // 6. 层 3 MiniMax rerank（失败自动降级到层 1c）
         items = rerankService.rerank(request.getQuestion(), items, RagItem::text);

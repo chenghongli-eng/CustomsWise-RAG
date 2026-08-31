@@ -9,7 +9,6 @@ import org.apache.hc.client5.http.classic.methods.HttpPost;
 import org.apache.hc.client5.http.config.RequestConfig;
 import org.apache.hc.core5.util.Timeout;
 import org.apache.hc.core5.http.io.entity.EntityUtils;
-import org.apache.hc.core5.http.io.HttpClientResponseHandler;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
@@ -45,9 +44,19 @@ public class RerankService {
     @Value("${rag.rerank.url:http://127.0.0.1:8001/v1/rerank}")
     private String rerankUrl;
 
-    /** rerank 服务超时（毫秒）。 */
-    @Value("${rag.rerank.timeout-ms:5000}")
+    /** rerank 服务连接超时（毫秒）。本地服务通常 ms 级，但 GPU 重载时会慢。 */
+    @Value("${rag.rerank.connect-timeout-ms:3000}")
+    private int connectTimeoutMs;
+
+    /** rerank 服务读取超时（毫秒）。BGE-reranker-v2-m3 推理 10 条长中文文档通常 5~15s，
+     * 给到30s 留余量；超时走降级，不阻塞主链路。 */
+    @Value("${rag.rerank.timeout-ms:30000}")
     private int timeoutMs;
+
+    /** 单条 chunk 送 rerank 前的最大字符数。bge-reranker-v2-m3 是 cross-encoder，attention O(n²)，
+     * 长 chunk 推理时间爆炸；500 字 ≈ 125 token 覆盖大多数政策条款。 */
+    @Value("${rag.rerank.max-chars-per-doc:500}")
+    private int maxCharsPerDoc;
 
     public RerankService(
             @Qualifier("minimaxHttpClient") HttpClient httpClient,
@@ -79,7 +88,25 @@ public class RerankService {
             return items;
         }
         try {
-            List<String> texts = items.stream().map(textExtractor).toList();
+            List<String> rawTexts = items.stream().map(textExtractor).toList();
+            int[] truncatedCount = {0};
+            List<String> texts = rawTexts.stream()
+                    .map(t -> {
+                        if (t != null && t.length() > maxCharsPerDoc) {
+                            truncatedCount[0]++;
+                            return t.substring(0, maxCharsPerDoc);
+                        }
+                        return t;
+                    })
+                    .toList();
+            int totalRawChars = rawTexts.stream().mapToInt(t -> t == null ? 0 : t.length()).sum();
+            int totalSentChars = texts.stream().mapToInt(t -> t == null ? 0 : t.length()).sum();
+            log.info("[BGE_RERANK_PREP] candidates={} truncated={} avgRawChars={} maxRawChars={} avgSentChars={} totalRawChars={} totalSentChars={} cap={}",
+                    texts.size(), truncatedCount[0],
+                    totalRawChars / Math.max(1, texts.size()),
+                    rawTexts.stream().mapToInt(t -> t == null ? 0 : t.length()).max().orElse(0),
+                    totalSentChars / Math.max(1, texts.size()),
+                    totalRawChars, totalSentChars, maxCharsPerDoc);
             List<RerankScore> scores = callBgeRerank(query, texts, items.size());
             if (scores == null || scores.isEmpty()) {
                 log.info("[FALLBACK] rerank_fallback=true reason=api_returned_null candidates={}",
@@ -133,14 +160,13 @@ public class RerankService {
                 objectMapper.writeValueAsString(requestBody), StandardCharsets.UTF_8));
 
         RequestConfig requestConfig = RequestConfig.custom()
+                .setConnectTimeout(Timeout.ofMilliseconds(connectTimeoutMs))
                 .setResponseTimeout(Timeout.ofMilliseconds(timeoutMs))
                 .build();
         post.setConfig(requestConfig);
 
-        String jsonResponse = httpClient.execute(post, (HttpClientResponseHandler<String>) response -> {
-            EntityUtils.consume(response.getEntity());
-            return EntityUtils.toString(response.getEntity(), StandardCharsets.UTF_8);
-        });
+        String jsonResponse = httpClient.execute(post, response ->
+                EntityUtils.toString(response.getEntity(), StandardCharsets.UTF_8));
 
         JsonNode root = objectMapper.readTree(jsonResponse);
         JsonNode results = root.get("results");
@@ -162,8 +188,9 @@ public class RerankService {
         }
         long elapsed = System.currentTimeMillis() - startMs;
         float avgScore = scores.isEmpty() ? 0 : sumScore / scores.size();
-        log.info("[BGE_RERANK] success candidates={} returned={} elapsedMs={} scoreRange=[{:.3f}, {:.3f}] avg={:.3f}",
-                documents.size(), scores.size(), elapsed, minScore, maxScore, avgScore);
+        log.info("[BGE_RERANK] success candidates={} returned={} elapsedMs={} scoreRange=[{}, {}] avg={}",
+                documents.size(), scores.size(), elapsed,
+                String.format("%.3f", minScore), String.format("%.3f", maxScore), String.format("%.3f", avgScore));
         return scores;
     }
 }

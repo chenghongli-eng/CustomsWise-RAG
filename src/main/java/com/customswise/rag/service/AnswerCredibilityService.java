@@ -55,8 +55,8 @@ public class AnswerCredibilityService {
         float score = topSimWeight * topSimilarity + citationWeight * citationScore;
         String level = score >= 0.7f ? "high" : score >= lowThreshold ? "medium" : "low";
 
-        log.info("[CREDIBILITY] topSim={:.3f} cited={} score={:.3f} level={}",
-                topSimilarity, cited, score, level);
+        log.info("[CREDIBILITY] topSim={} cited={} score={} level={}",
+                String.format("%.3f", topSimilarity), cited, String.format("%.3f", score), level);
         return new CredibilityResult(score, level, cited);
     }
 
