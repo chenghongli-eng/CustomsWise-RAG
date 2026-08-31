@@ -40,7 +40,11 @@ CREATE TABLE IF NOT EXISTS qa_history (
     user_query TEXT NOT NULL,
     user_conditions TEXT,
     ai_response TEXT,
-    references_info JSONB,
+    references_info TEXT,
+    confidence_score FLOAT,
+    confidence_level VARCHAR(20),
+    citations_present BOOLEAN,
+    experiment_id VARCHAR(50),
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
@@ -78,7 +82,7 @@ COMMENT ON COLUMN policy_document.deleted IS '逻辑删除标记：false未删�
 
 -- 2.文档切片表注释
 COMMENT ON TABLE document_chunk IS '文档切片表，PDF解析后拆分的文本chunk，和Milvus向量一一对应';
-COMMENT ON COLUMN document_shturl.c IS '主键ID';
+COMMENT ON COLUMN document_chunk.id IS '主键ID';
 COMMENT ON COLUMN document_chunk.document_id IS '关联policy_document政策文档ID';
 COMMENT ON COLUMN document_chunk.chunk_index IS '分片序号，同一个文档内分片顺序编号';
 COMMENT ON COLUMN document_chunk.content IS '分片原始文本内容';
@@ -93,7 +97,11 @@ COMMENT ON COLUMN qa_history.session_id IS '会话ID，区分不同对话会话'
 COMMENT ON COLUMN qa_history.user_query IS '用户提问内容';
 COMMENT ON COLUMN qa_history.user_conditions IS '用户附加筛选条件（业务、时间等）';
 COMMENT ON COLUMN qa_history.ai_response IS '大模型返回回答结果';
-COMMENT ON COLUMN qa_history.references_info IS '检索引用来源信息，JSONB存储，记录召回的文档、切片信息';
+COMMENT ON COLUMN qa_history.references_info IS '检索引用来源信息，Jackson序列化为TEXT存储，记录召回的文档、切片信息';
+COMMENT ON COLUMN qa_history.confidence_score IS '答案可信度评分（0.0~1.0），由AnswerCredibilityService计算后写入';
+COMMENT ON COLUMN qa_history.confidence_level IS '可信度等级：high / medium / low';
+COMMENT ON COLUMN qa_history.citations_present IS 'LLM是否在答案中实际引用了文档编号';
+COMMENT ON COLUMN qa_history.experiment_id IS '所属实验分组（A/B测试用）';
 COMMENT ON COLUMN qa_history.created_at IS '问答发生时间';
 
 
