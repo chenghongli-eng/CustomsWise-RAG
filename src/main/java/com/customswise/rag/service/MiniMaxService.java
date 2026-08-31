@@ -98,8 +98,10 @@ public class MiniMaxService {
                     return answer;
                 }
                 return "MiniMax API响应格式异常";
-        } catch (java.net.SocketTimeoutException | org.apache.http.conn.ConnectTimeoutException e) {
+        } catch (java.net.SocketTimeoutException e) {
             // 连接/读取超时——可降级为友好提示文案，HTTP 仍 200
+            // 注：HttpClient 4 的 ConnectTimeoutException 已迁到 HC5 后不可用，SocketTimeoutException
+            // 是其父类，单独 catch 即可覆盖连接+读取超时
             log.warn("[FALLBACK] chat_timeout=true reason=socket_timeout elapsedMs={}",
                     CHAT_RESPONSE_TIMEOUT_MS);
             return "调用MiniMax API超时（" + CHAT_RESPONSE_TIMEOUT_MS + "ms）";
@@ -161,7 +163,7 @@ public class MiniMaxService {
                 }
                 return result;
             }
-        } catch (java.net.SocketTimeoutException | org.apache.http.conn.ConnectTimeoutException e) {
+        } catch (java.net.SocketTimeoutException e) {
             log.warn("[FALLBACK] embed_fallback=true reason=timeout ({}ms) textLen={}",
                     config.getResponseTimeoutMs(), text.length());
         } catch (Exception e) {
@@ -239,7 +241,7 @@ public class MiniMaxService {
                     config.getRerankModel(), documents.size(), scores.size(),
                     System.currentTimeMillis() - t0);
             return scores;
-        } catch (java.net.SocketTimeoutException | org.apache.http.conn.ConnectTimeoutException e) {
+        } catch (java.net.SocketTimeoutException e) {
             log.warn("MiniMax rerank timeout ({}ms) candidates={}",
                     config.getResponseTimeoutMs(), documents.size());
             return null;

@@ -23,7 +23,7 @@
         <maven.compiler.source>21</maven.compiler.source>
         <maven.compiler.target>21</maven.compiler.target>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
-        <milvus.version>2.4.5</milvus.version>
+        <milvus.version>2.5.6</milvus.version>
         <minimax.version>1.0.0</minimax.version>
     </properties>
 
