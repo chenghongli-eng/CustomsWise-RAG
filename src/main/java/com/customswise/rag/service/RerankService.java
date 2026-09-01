@@ -3,6 +3,7 @@ package com.customswise.rag.service;
 import com.customswise.rag.dto.RerankScore;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import io.micrometer.core.instrument.MeterRegistry;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.hc.client5.http.classic.HttpClient;
 import org.apache.hc.client5.http.classic.methods.HttpPost;
@@ -36,6 +37,9 @@ public class RerankService {
     /** JSON 序列化工具。 */
     private final ObjectMapper objectMapper;
 
+    /** Micrometer 指标注册表，用于暴露 rerank fallback 计数给 Prometheus。 */
+    private final MeterRegistry meterRegistry;
+
     /** 总开关：false 时直接返回原列表。 */
     @Value("${rag.rerank.enabled:true}")
     private boolean enabled;
@@ -60,9 +64,11 @@ public class RerankService {
 
     public RerankService(
             @Qualifier("minimaxHttpClient") HttpClient httpClient,
-            ObjectMapper objectMapper) {
+            ObjectMapper objectMapper,
+            MeterRegistry meterRegistry) {
         this.httpClient = httpClient;
         this.objectMapper = objectMapper;
+        this.meterRegistry = meterRegistry;
     }
 
     /**
@@ -109,6 +115,7 @@ public class RerankService {
                     totalRawChars, totalSentChars, maxCharsPerDoc);
             List<RerankScore> scores = callBgeRerank(query, texts, items.size());
             if (scores == null || scores.isEmpty()) {
+                meterRegistry.counter("rag.rerank.fallback", "reason", "api_returned_null").increment();
                 log.info("[FALLBACK] rerank_fallback=true reason=api_returned_null candidates={}",
                         items.size());
                 return items;
@@ -131,6 +138,7 @@ public class RerankService {
             }
             return reranked;
         } catch (Exception e) {
+            meterRegistry.counter("rag.rerank.fallback", "reason", e.getClass().getSimpleName()).increment();
             log.error("[FALLBACK] rerank_fallback=true reason={} msg={}",
                     e.getClass().getSimpleName(), e.getMessage());
             return items;

@@ -2,7 +2,8 @@
 
 按优先级排列，每项标注预估影响和实施成本。
 
-> ✅ = 今日已完成
+> ✅ = 2026-08-31 已完成
+> ✅9-1 = 2026-09-01 已完成
 > 📋 = 已建立追踪文档，详见 [[业务问题追踪/2026-08-29-切片与状态粒度问题.md]]
 
 ---
@@ -20,7 +21,7 @@
 **影响**：用户问得偏也能找到资料，召回率提升。
 **成本**：中，主要是增加 LLM 调用（成本和时延）。
 
-### 2. rerank 失败时告警
+### 2. rerank 失败时告警 ✅9-1 已做
 **问题**：当前 rerank 失败只 warn，无法触发告警。
 **方案**：
 - `RerankService` 失败时除了 warn，再发一个 `metrics.counter("rerank_fallback").inc()`
@@ -29,7 +30,14 @@
 **影响**：及时发现 rerank 服务异常，避免长期静默降级。
 **成本**：低，加 Micrometer 即可。
 
-### 3. PostgreSQL `references_info` JSONB → TEXT 历史数据迁移脚本
+**已完成（2026-09-01）**：
+- `pom.xml` 加 `spring-boot-starter-actuator` + `micrometer-registry-prometheus`
+- `application.yml` 暴露 `/actuator/prometheus`，全局 tag `application`
+- `RerankService` 注入 `MeterRegistry`，在 `api_returned_null` 和 catch-all 两处 fallback 埋点 counter（reason tag 区分）
+- 指标名 `rag.rerank.fallback`，AlertManager 规则见 dev-log
+- 待运维侧配置 Prometheus + AlertManager 后才能触发实际告警
+
+### 3. PostgreSQL `references_info` JSONB → TEXT 历史数据迁移脚本 ✅9-1 已做
 **问题**：今日 schema 变更改了字段类型，存量数据需要一次性迁移并校验。
 **方案**：
 - Flyway/Liquibase migration 用 `USING references_info::text` 兜底
@@ -38,6 +46,12 @@
 
 **影响**：避免线上数据迁移踩坑。
 **成本**：极低，一次性脚本。
+
+**已完成（2026-09-01）**：
+- 新增 `src/main/resources/db/migration/V20260831__qa_history_references_info_jsonb_to_text.sql`（idempotent，DO $$ ... $$ 包类型检查 guard）
+- 新增 `src/main/resources/db/migration/README.md`（命名约定 / 运行方式 / 适用场景 / 回滚）
+- 脚本末尾附 3 条手动校验 SQL（类型确认 / 抽样 JSON 合法性 / 非空率）
+- 项目无 Flyway/Liquibase，脚本由 DBA 手动执行
 
 ## P1 — 体验优化（短期 1-2 周）
 
@@ -132,8 +146,8 @@ BGE rerank 调用日志记录 candidates 数、分数分布、耗时，调参有
 | 优化项 | 预期收益 | 实施成本 | 状态 |
 |--------|---------|---------|------|
 | 候选不足时 query 改写（#1） | 中 | 中 | 待做 |
-| rerank 失败告警（#2） | 中 | 极低 | 待做 |
-| references_info 迁移脚本（#3） | 中 | 极低 | 待做 |
+| rerank 失败告警（#2） | 中 | 极低 | ✅9-1 已做 |
+| references_info 迁移脚本（#3） | 中 | 极低 | ✅9-1 已做 |
 | 批量 Embedding（#4） | 中 | 低 | 待做 |
 | 引用片段精炼（#5） | 中 | 中 | 待做 |
 | 批量文档限定检索（#6） | 高 | 中 | 待做 |

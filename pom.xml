@@ -119,6 +119,16 @@
             <version>4.5.0</version>
         </dependency>
 
+        <!-- Actuator + Prometheus：暴露 /actuator/prometheus 给 Prometheus 抓取 -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-actuator</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>io.micrometer</groupId>
+            <artifactId>micrometer-registry-prometheus</artifactId>
+        </dependency>
+
         <!-- Spring Boot Test -->
         <dependency>
             <groupId>org.springframework.boot</groupId>
