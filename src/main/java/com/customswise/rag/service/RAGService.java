@@ -189,7 +189,8 @@ public class RAGService {
         for (int i = 0; i < Math.min(rerankTopK, items.size()); i++) {
             topResults.add(items.get(i).toMap());
         }
-        log.info("最终 top{} 条:", rerankTopK);
+        log.info("最终 context {} 条（rerankTopK 配置={}，effectiveCap={}）:",
+                topResults.size(), rerankTopK, effectiveCap);
         for (int i = 0; i < topResults.size(); i++) {
             Map<String, Object> r = topResults.get(i);
             float sim = ((Number) r.get("similarity")).floatValue();
