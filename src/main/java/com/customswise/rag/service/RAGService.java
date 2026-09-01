@@ -66,6 +66,30 @@ public class RAGService {
     @Value("${rag.rerank.dedup-adaptive:true}")
     private boolean dedupAdaptive;
 
+    /** Dynamic candidate-cap 总开关：true 时按 avgRawChars 选档；false 退化为固定 candidate-cap */
+    @Value("${rag.rerank.dynamic-cap.enabled:true}")
+    private boolean rerankDynamicCapEnabled;
+
+    /** avgRaw < 此值 → 短文档档（多召回，质量优先） */
+    @Value("${rag.rerank.dynamic-cap.short-threshold-chars:200}")
+    private int rerankDynamicShortThresholdChars;
+
+    /** avgRaw > 此值 → 长文档档（少召回，性能优先） */
+    @Value("${rag.rerank.dynamic-cap.long-threshold-chars:400}")
+    private int rerankDynamicLongThresholdChars;
+
+    /** 短文档档 cap（avgRaw < short-threshold-chars） */
+    @Value("${rag.rerank.dynamic-cap.short-cap:6}")
+    private int rerankDynamicShortCap;
+
+    /** 中等档 cap（short <= avgRaw <= long） */
+    @Value("${rag.rerank.dynamic-cap.mid-cap:4}")
+    private int rerankDynamicMidCap;
+
+    /** 长文档档 cap（avgRaw > long-threshold-chars） */
+    @Value("${rag.rerank.dynamic-cap.long-cap:3}")
+    private int rerankDynamicLongCap;
+
     public RAGService(MiniMaxService miniMaxService,
                      MilvusService milvusService,
                      RerankService rerankService,
@@ -147,8 +171,11 @@ public class RAGService {
         items = statusWeightedSort(items);
 
         // 5b. 候选上限：bge-reranker 是 cross-encoder O(n²)，太多候选推理爆 30s；按状态加权序截一刀
-        if (items.size() > rerankCandidateCap) {
-            items = new ArrayList<>(items.subList(0, rerankCandidateCap));
+        //     Dynamic-cap：根据当前候选 chunks 的 avgRawChars 自动选档（短文档多召回、长文档少召回），
+        //     最终 clamp 到配置的 candidate-cap 作为绝对上限，避免异常配置导致 rerank 超时
+        int effectiveCap = computeEffectiveCap(items);
+        if (items.size() > effectiveCap) {
+            items = new ArrayList<>(items.subList(0, effectiveCap));
         }
 
         // 6. 层 3 MiniMax rerank（失败自动降级到层 1c）
@@ -246,6 +273,56 @@ public class RAGService {
         response.setCitationsPresent(credibility.citationsPresent());
 
         return response;
+    }
+
+    /**
+     * Dynamic candidate-cap：根据"状态加权排序后剩余候选"的 avgRawChars 自动选档。
+     *
+     * <p>档位规则：
+     * <ul>
+     *   <li>avgRaw &lt; short-threshold-chars → 短文档档（short-cap，多召回，质量优先）</li>
+     *   <li>avgRaw &gt; long-threshold-chars → 长文档档（long-cap，少召回，性能优先）</li>
+     *   <li>其它 → 中等档（mid-cap）</li>
+     * </ul>
+     *
+     * <p>无论动态档位怎么选，最终 clamp 到 {@code rerankCandidateCap} 作为绝对上限。
+     * 这样：
+     * <ul>
+     *   <li>想用短文档档 cap=6 真正生效 → 把 candidate-cap 提到 6+</li>
+     *   <li>保守起见 candidate-cap=4 → 所有档位实际都被压到 4，动态档只决定下限</li>
+     * </ul>
+     *
+     * <p>关闭动态档（enabled=false）或入参为空 → 退化为固定 candidate-cap。
+     */
+    private int computeEffectiveCap(List<RagItem> items) {
+        if (!rerankDynamicCapEnabled || items == null || items.isEmpty()) {
+            return rerankCandidateCap;
+        }
+        // 用 top-K 估算 avgRaw（K = configuredCap），而非全 items 平均。
+        // 原因：状态加权排序后长 chunk 会被排到前面，全 items 平均会被短 chunk 稀释，
+        //      导致系统性低估 rerank 实际负载。top-K 永远偏向保守（高估负载→选更激进 cap→更安全）。
+        int refK = Math.min(items.size(), rerankCandidateCap);
+        double avgRawChars = items.stream()
+                .limit(refK)
+                .mapToInt(i -> i.text() == null ? 0 : i.text().length())
+                .average()
+                .orElse(0);
+        int tierCap;
+        String tier;
+        if (avgRawChars < rerankDynamicShortThresholdChars) {
+            tierCap = rerankDynamicShortCap;
+            tier = "short";
+        } else if (avgRawChars > rerankDynamicLongThresholdChars) {
+            tierCap = rerankDynamicLongCap;
+            tier = "long";
+        } else {
+            tierCap = rerankDynamicMidCap;
+            tier = "mid";
+        }
+        int effectiveCap = Math.min(tierCap, rerankCandidateCap);
+        log.info("[BGE_RERANK_CAP] tier={} avgRawChars={} ({}/{} items) tierCap={} effectiveCap={}",
+                tier, (int) avgRawChars, refK, items.size(), tierCap, effectiveCap);
+        return effectiveCap;
     }
 
     /**

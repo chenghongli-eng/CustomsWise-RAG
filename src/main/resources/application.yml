@@ -37,9 +37,6 @@ management:
     web:
       exposure:
         include: health,info,prometheus
-  endpoint:
-    prometheus:
-      enabled: true
     health:
       show-details: when-authorized
   metrics:
@@ -138,6 +135,18 @@ rag:
     max-chars-per-doc: 500
     # 送 rerank 前的候选上限（在 RAGService 状态加权排序后截）。6+ ×500字 已逼近30s超时，砍到4留余量
     candidate-cap: 4
+    # 动态 candidate-cap：根据"状态加权排序后剩余 chunks 的 avgRawChars"自动选 cap，
+    # 短文档多召回、长文档少召回，整体质量/性能平衡。
+    # 总开关：false 时退化为固定 candidate-cap
+    dynamic-cap:
+      enabled: true
+      # avgRaw < 此值 → 短文档档
+      short-threshold-chars: 200
+      # avgRaw > 此值 → 长文档档
+      long-threshold-chars: 300
+      short-cap: 4
+      mid-cap: 3
+      long-cap: 2
     # 相似度阈值：低于此值的 chunk 直接丢弃（避免送入 LLM 拉低质量）
     similarity-threshold: 0.32
     # 同 docId 最多保留的 chunk 数（解决滑窗重复）

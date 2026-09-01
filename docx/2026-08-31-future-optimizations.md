@@ -84,7 +84,7 @@
 **影响**：批量上传 + 追问场景体验闭环。
 **成本**：中，Milvus 检索表达式加一层 docId IN filter。
 
-### 7. BGE rerank candidate-cap 自动化
+### 7. BGE rerank candidate-cap 自动化 ✅9-1 已做
 **问题**：今日硬编码 `candidate-cap=4` 是基于"4 条 × 500 字 已逼近 30s"的经验值，但不同文档长度应该可以动态调整。
 **方案**：
 - 在 `BGE_RERANK_PREP` 阶段根据 avgRaw 动态选 cap（avgRaw<200 → cap=6，200~400 → cap=4，>400 → cap=3）
@@ -92,6 +92,17 @@
 
 **影响**：短文档多召回、长文档少召回，整体质量/性能平衡。
 **成本**：低，几行配置式代码。
+
+**已完成（2026-09-01 下午，含参数调优）**：
+- `application.yml` 新增 `rag.rerank.dynamic-cap` 配置段
+- `RAGService.computeEffectiveCap(List<RagItem>)` 选档 + clamp 到 configuredCap
+- 第 5b 步截断改用 effectiveCap，加 `[BGE_RERANK_CAP]` 日志
+- 首版上线后跑了一条真实 query 发现 mid 档仍接近 30s timeout，做了二次调优：
+  - `long-threshold-chars`: 400 → 300（让 mid 档 cap 也少 1 条）
+  - `mid-cap`: 4 → 3，`long-cap`: 3 → 2
+  - top-K 估算：`items.stream()` → `items.stream().limit(refK)`，refK = configuredCap（避免长 chunk 冒顶造成的全量低估）
+- 改后预期：类似 case rerank 时间从 24.9s → ~12s
+- 详见 [[2026-09-01-dev-log]] "参数调优"小节
 
 ## P2 — 检索质量优化（中期）
 
@@ -151,7 +162,7 @@ BGE rerank 调用日志记录 candidates 数、分数分布、耗时，调参有
 | 批量 Embedding（#4） | 中 | 低 | 待做 |
 | 引用片段精炼（#5） | 中 | 中 | 待做 |
 | 批量文档限定检索（#6） | 高 | 中 | 待做 |
-| BGE cap 自动化（#7） | 中 | 低 | 待做 |
+| BGE cap 自动化（#7） | 中 | 低 | ✅9-1 已做 |
 | 混合检索 BM25（#8） | 高 | 中 | ✅ 已做 |
 | 政策时间线视图（#12） | 中 | 低-中 | 待做 |
 | PaddleOCR 质量优化（#11） | 中 | 低 | 待做 |
